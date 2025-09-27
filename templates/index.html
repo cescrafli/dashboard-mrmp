@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Film Terpopuler Saat Ini</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; background-color: #14181c; color: #fff; margin: 0; padding: 20px; }
+        h1 { text-align: center; color: #1DB954; }
+        .movie-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+        .movie-card { background-color: #282828; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .movie-card img { width: 100%; display: block; }
+        .movie-info { padding: 15px; }
+        .movie-info h3 { margin: 0 0 10px 0; font-size: 16px; }
+        .movie-info p { margin: 0; font-size: 14px; color: #b3b3b3; }
+    </style>
+</head>
+<body>
+    <h1>Film Terpopuler Saat Ini (Live from TMDb)</h1>
+    <div class="movie-gallery" id="movie-gallery"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const gallery = document.getElementById('movie-gallery');
+
+            fetch('/api/data')
+                .then(response => response.json())
+                .then(data => {
+                    // Cek jika ada error dari backend
+                    if (data.error) {
+                        gallery.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
+                        return;
+                    }
+
+                    // Ambil daftar film dari data API
+                    const movies = data.results;
+
+                    // Loop melalui setiap film dan buat kartu HTML-nya
+                    movies.forEach(movie => {
+                        const posterUrl = `https://image.tmdb.org/t/p/w500${movie.poster_path}`;
+
+                        const movieCardHTML = `
+                            <div class="movie-card">
+                                <img src="${posterUrl}" alt="${movie.title}">
+                                <div class="movie-info">
+                                    <h3>${movie.title}</h3>
+                                    <p>⭐ Rating: ${movie.vote_average}</p>
+                                </div>
+                            </div>
+                        `;
+
+                        // Tambahkan kartu film ke galeri
+                        gallery.innerHTML += movieCardHTML;
+                    });
+                })
+                .catch(error => {
+                    console.error('Error saat mengambil data:', error);
+                    gallery.innerHTML = "<p style='color: red;'>Gagal memuat data. Periksa konsol untuk detail.</p>";
+                });
+        });
+    </script>
+</body>
+</html>
