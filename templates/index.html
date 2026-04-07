@@ -232,18 +232,18 @@
 <body>
     <div class="container">
         <header>
-            <h1>MRMP Dashboard</h1>
-            <p class="subtitle">Secure, AI-Powered Movie Explorer</p>
+            <h1>MRMP Movie Explorer</h1>
+            <p class="subtitle">Reference Movie Recommendation Platform</p>
         </header>
 
         <div class="top-section">
             <div class="search-container">
-                <input type="text" id="search-input" placeholder="Cari film (contoh: Inception)..." onkeypress="handleKeyPress(event)">
+                <input type="text" id="search-input" placeholder="Search Movie (example: spongebob goes to bali)..." onkeypress="handleKeyPress(event)">
                 <button onclick="searchMovies()">Cari</button>
             </div>
 
             <div class="chart-section" id="chart-section">
-                <h2>📈 Analisis Rating Popularitas</h2>
+                <h2>📈 Popularity Rating Analysis</h2>
                 <div class="loader" id="chart-loader"></div>
                 <div class="chart-container">
                     <canvas id="ratingChart"></canvas>
@@ -251,7 +251,7 @@
             </div>
         </div>
 
-        <h2 class="section-title" id="gallery-title">Film Terpopuler</h2>
+        <h2 class="section-title" id="gallery-title">Most Popular Film</h2>
         <div class="loader hidden" id="gallery-loader"></div>
         <div class="movie-gallery" id="movie-gallery"></div>
         <div style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
@@ -328,12 +328,12 @@
                         document.getElementById('load-more-btn').classList.remove('hidden');
                     }
                 } else if (!append) {
-                    gallery.innerHTML = '<p>Tidak ada film ditemukan.</p>';
+                    gallery.innerHTML = '<p>No film found.</p>';
                 }
             } catch (err) {
                 console.error(err);
                 galleryLoader.classList.add('hidden');
-                if (!append) gallery.innerHTML = '<p style="color:red">Terjadi kesalahan pencarian.</p>';
+                if (!append) gallery.innerHTML = '<p style="color:red">A search error occurred.</p>';
             }
         }
 
@@ -341,7 +341,7 @@
             if (!append) {
                 currentPage = 1;
                 currentSearchQuery = '';
-                document.getElementById('gallery-title').innerText = 'Film Terpopuler Saat Ini';
+                document.getElementById('gallery-title').innerText = 'The Most Popular Movie Right Now';
                 gallery.innerHTML = '';
             }
             galleryLoader.classList.remove('hidden');
@@ -359,7 +359,7 @@
                 }
             } catch (err) {
                 galleryLoader.classList.add('hidden');
-                if (!append) gallery.innerHTML = '<p style="color:red">Gagal memuat film populer.</p>';
+                if (!append) gallery.innerHTML = '<p style="color:red">Failed to load popular movies..</p>';
             }
         }
 
@@ -460,9 +460,9 @@
                             <h3>${movie.title}</h3>
                             <p>⭐ ${movie.vote_average.toFixed(1)} / 10</p>
                             <div class="card-actions">
-                                <button class="btn btn-ml" onclick="getRecommendations(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">🔮 Rekomendasi ML</button>
-                                <button class="btn btn-review" onclick="getReviews(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">💬 Analisis Sentimen</button>
-                                <button class="btn btn-ml" style="background:#ef4444; border-color:#ef4444; color:white; margin-top:5px; width:100%;" onclick="watchTrailer(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">🎬 Tonton Trailer</button>
+                                <button class="btn btn-ml" onclick="getRecommendations(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">🔮 Similar Recommendations</button>
+                                <button class="btn btn-review" onclick="getReviews(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">💬 Sentiment Analysis</button>
+                                <button class="btn btn-ml" style="background:#ef4444; border-color:#ef4444; color:white; margin-top:5px; width:100%;" onclick="watchTrailer(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">🎬 Watch Trailer</button>
                             </div>
                         </div>
                     </div>
@@ -518,7 +518,7 @@
                 const data = await res.json();
                 
                 if (data.results && data.results.length > 0) {
-                    let html = `<p>Berdasarkan kecocokan sinopsis (analisis teks), Anda mungkin suka:</p><div class="movie-gallery" style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));">`;
+                    let html = `<p>Based on synopsis matching (text analysis), you might like:</p><div class="movie-gallery" style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));">`;
                     data.results.forEach(m => {
                         const poster = m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : 'https://via.placeholder.com/200x300?text=No+Img';
                         html += `
@@ -534,10 +534,10 @@
                     html += `</div>`;
                     document.getElementById('modal-body').innerHTML = html;
                 } else {
-                    document.getElementById('modal-body').innerHTML = '<p>Tidak menemukan film serupa.</p>';
+                    document.getElementById('modal-body').innerHTML = '<p>Did not find a similar movie.</p>';
                 }
             } catch (err) {
-                document.getElementById('modal-body').innerHTML = '<p>Terjadi kesalahan saat mencari rekomendasi ML.</p>';
+                document.getElementById('modal-body').innerHTML = '<p>An error occurred while searching for recommendations.</p>';
             }
         }
 
@@ -546,14 +546,14 @@
         // ==========================
         async function getReviews(movieId, title) {
             // Ubah teks loading untuk memberitahu bahwa AI Groq sedang bekerja
-            openModal(`Analisis Sentimen Ulasan: "${title}"`, '<div class="loader"></div><p style="text-align:center">AI Groq sedang membaca semua ulasan dan merangkumnya untukmu...</p>');
+            openModal(`Analisis Sentimen Ulasan: "${title}"`, '<div class="loader"></div><p style="text-align:center">MRMP is reading all the reviews and summarizing them for you...</p>');
             
             try {
                 const res = await fetch(`/api/reviews/${movieId}`);
                 const data = await res.json();
                 
                 if (data.total === 0) {
-                    document.getElementById('modal-body').innerHTML = '<p>Tidak ada ulasan ditemukan di database.</p>';
+                    document.getElementById('modal-body').innerHTML = '<p>No reviews found in the database.</p>';
                     return;
                 }
 
@@ -595,12 +595,12 @@
                 if ((data.top_positive_keywords && data.top_positive_keywords.length > 0) || (data.top_negative_keywords && data.top_negative_keywords.length > 0)) {
                     html += `<div class="keyword-container"><p style="margin:0 0 5px 0;font-weight:bold;font-size:0.9rem">✨ Highlight Words (NLTK Tokenizer)</p>`;
                     if (data.top_positive_keywords.length > 0) {
-                        html += `<div class="keyword-row"><span class="keyword-label">Positif:</span>`;
+                        html += `<div class="keyword-row"><span class="keyword-label">Positive:</span>`;
                         data.top_positive_keywords.forEach(word => { html += `<span class="keyword-badge pos">${word}</span>`; });
                         html += `</div>`;
                     }
                     if (data.top_negative_keywords.length > 0) {
-                        html += `<div class="keyword-row"><span class="keyword-label">Negatif:</span>`;
+                        html += `<div class="keyword-row"><span class="keyword-label">Negative:</span>`;
                         data.top_negative_keywords.forEach(word => { html += `<span class="keyword-badge neg">${word}</span>`; });
                         html += `</div>`;
                     }
@@ -625,10 +625,10 @@
                 // FITUR BARU: Mini-RAG Chat UI
                 html += `
                     <div style="margin-top: 30px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;">
-                        <h4 style="margin: 0 0 10px 0; color:#38bdf8;">🤖 Tanya AI (Berdasarkan Ulasan Ini)</h4>
+                        <h4 style="margin: 0 0 10px 0; color:#38bdf8;">🤖 Ask MRMP (Based on These Reviews)</h4>
                         <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <input type="text" id="qa-input-${movieId}" placeholder="Contoh: Apakah visual efeknya bagus?" style="flex:1; padding:10px; border-radius:4px; border:1px solid #334155; background:#1e293b; color:white;">
-                            <button onclick="askAI(${movieId})" style="padding:10px 20px; border-radius:4px; background:#3b82f6; color:white; border:none; cursor:pointer;">Tanya</button>
+                            <input type="text" id="qa-input-${movieId}" placeholder="Example: Is the visual effect good?" style="flex:1; padding:10px; border-radius:4px; border:1px solid #334155; background:#1e293b; color:white;">
+                            <button onclick="askAI(${movieId})" style="padding:10px 20px; border-radius:4px; background:#3b82f6; color:white; border:none; cursor:pointer;">Ask</button>
                         </div>
                         <div id="qa-result-${movieId}" style="display:none; padding:15px; border-radius:8px; background:rgba(56, 189, 248, 0.1); border:1px solid rgba(56, 189, 248, 0.3); color:#e2e8f0; font-size:0.9rem; line-height:1.5;"></div>
                     </div>
@@ -636,7 +636,7 @@
                 
                 document.getElementById('modal-body').innerHTML = html;
             } catch (err) {
-                document.getElementById('modal-body').innerHTML = '<p>Terjadi kesalahan saat memproses sentimen.</p>';
+                document.getElementById('modal-body').innerHTML = '<p>An error occurred while processing sentiment.</p>';
             }
         }
 
@@ -648,7 +648,7 @@
             if (!question) return;
             
             resultBox.style.display = 'block';
-            resultBox.innerHTML = '<div style="display:flex; align-items:center; gap:10px;"><div class="loader" style="width:15px;height:15px;margin:0;"></div> <span style="color:#60a5fa;">Groq sedang membaca ulasan untuk Anda...</span></div>';
+            resultBox.innerHTML = '<div style="display:flex; align-items:center; gap:10px;"><div class="loader" style="width:15px;height:15px;margin:0;"></div> <span style="color:#60a5fa;">MRMP is reading the reviews for you...</span></div>';
             
             try {
                 const res = await fetch(`/api/qa/${movieId}`, {
@@ -659,12 +659,12 @@
                 const data = await res.json();
                 
                 if (data.answer) {
-                    resultBox.innerHTML = `<strong>Jawaban AI:</strong><br/>${data.answer}`;
+                    resultBox.innerHTML = `<strong>MRMP Answer:</strong><br/>${data.answer}`;
                 } else if (data.error) {
                     resultBox.innerHTML = `<span style="color:#fca5a5;">Error: ${data.error}</span>`;
                 }
             } catch (err) {
-                resultBox.innerHTML = `<span style="color:#fca5a5;">Gagal terhubung ke server AI.</span>`;
+                resultBox.innerHTML = `<span style="color:#fca5a5;">Failed to connect to MRMP brain.</span>`;
             }
         }
     </script>
