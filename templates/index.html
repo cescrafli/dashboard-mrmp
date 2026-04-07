@@ -546,7 +546,7 @@
         // ==========================
         async function getReviews(movieId, title) {
             // Ubah teks loading untuk memberitahu bahwa AI Groq sedang bekerja
-            openModal(`Analisis Sentimen Ulasan: "${title}"`, '<div class="loader"></div><p style="text-align:center">MRMP is reading all the reviews and summarizing them for you...</p>');
+            openModal(`Sentiment Analysis: "${title}"`, '<div class="loader"></div><p style="text-align:center">MRMP is reading all the reviews and summarizing them for you...</p>');
             
             try {
                 const res = await fetch(`/api/reviews/${movieId}`);
@@ -558,7 +558,7 @@
                 }
 
                 let html = `
-                    <p>Total ulasan dianalisis: <b>${data.total}</b></p>
+                    <p>Total reviews analyzed: <b>${data.total}</b></p>
                     <div class="sentiment-bar">
                         <div class="sentiment-positive" style="width: ${data.positive_percentage}%">${data.positive_percentage}% Positif</div>
                         <div class="sentiment-negative" style="width: ${data.negative_percentage}%">${data.negative_percentage}% Negatif</div>
@@ -570,7 +570,7 @@
                     let aiHtml = `
                     <div style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); padding: 15px; border-radius: 12px; margin: 20px 0;">
                         <h4 style="margin: 0 0 10px 0; color: #60a5fa; display: flex; align-items: center; gap: 8px;">
-                            ✨ Ringkasan Eksekutif AI (Groq)
+                            ✨ MRMP Executive Summary
                         </h4>
                         <p style="margin: 0 0 10px 0; font-size: 0.95rem; line-height: 1.5; color: #e2e8f0;">
                             ${data.ai_summary.ringkasan}
@@ -608,7 +608,7 @@
                 }
 
                 if (data.reviews.length > 0) {
-                    html += '<h3>Cuplikan Ulasan:</h3>';
+                    html += '<h3>Review Snippets:</h3>';
                     data.reviews.forEach(r => {
                         html += `
                             <div class="review-item ${r.sentiment}">

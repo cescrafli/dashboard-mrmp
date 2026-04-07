@@ -14,12 +14,20 @@ import string
 import json
 from flask_caching import Cache
 from groq import Groq  # <-- TAMBAHAN: Import Groq
+from sentence_transformers import SentenceTransformer # <-- TAMBAHAN: Import Sentence Transformer
+
+# Setup /tmp directory for serverless environments (like Vercel)
+import tempfile
+temp_dir = tempfile.gettempdir()
+os.environ['HF_HOME'] = temp_dir
+os.environ['NLTK_DATA'] = temp_dir
+nltk.data.path.append(temp_dir)
 
 # Ensure VADER lexicon and stopwords are downloaded
-nltk.download('vader_lexicon', quiet=True)
-nltk.download('stopwords', quiet=True)
-nltk.download('punkt', quiet=True)
-nltk.download('punkt_tab', quiet=True)
+nltk.download('vader_lexicon', download_dir=temp_dir, quiet=True)
+nltk.download('stopwords', download_dir=temp_dir, quiet=True)
+nltk.download('punkt', download_dir=temp_dir, quiet=True)
+nltk.download('punkt_tab', download_dir=temp_dir, quiet=True)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -135,7 +143,7 @@ def movie_recommendations(movie_id):
         # Ensure the target movie is in our list
         # Create a list without the target movie to avoid matching with itself
         movies_dataset = [m for m in similar_movies if m['id'] != movie_id]
-        movies_dataset.insert(0, target_movie) # Put target movie at index 0
+        movies_dataset.insert(0, target_movie)  # Put target movie at index 0
         
         # Calculate min & max for Min-Max Scaling (Vote Average and Popularity)
         vote_averages = [m.get('vote_average', 0) for m in movies_dataset]
@@ -148,7 +156,7 @@ def movie_recommendations(movie_id):
         v_range = max_v - min_v if max_v > min_v else 1
         p_range = max_p - min_p if max_p > min_p else 1
         
-        # Extract overviews and append genres for robust TF-IDF
+        # Extract overviews and append genres for robust semantic search
         overviews = []
         for m in movies_dataset:
             text = m.get('overview', '') or ''
@@ -158,15 +166,15 @@ def movie_recommendations(movie_id):
             else:
                 g_names = [genre_map.get(gid, '') for gid in m.get('genre_ids', []) if gid in genre_map]
             
-            g_str = " ".join(g_names)
-            overviews.append(f"{text} {g_str}")
+            g_str = ", ".join(g_names)
+            overviews.append(f"{text} Genres: {g_str}")
         
-        # Calculate TF-IDF and Cosine Similarity
-        vectorizer = TfidfVectorizer(stop_words='english')
-        tfidf_matrix = vectorizer.fit_transform(overviews)
+        # Local initialization for Vercel cold-starts and memory efficiency
+        model = SentenceTransformer('all-MiniLM-L6-v2') 
+        embeddings = model.encode(overviews)
         
         # Calculate cosine similarity of target movie (index 0) against all others
-        cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix)
+        cosine_sim = cosine_similarity([embeddings[0]], embeddings)
         
         # Calculate Hybrid Score = 0.5*Cosine + 0.3*Vote_Avg_Norm + 0.2*Pop_Norm
         # Skip index 0 which is the movie itself
@@ -280,7 +288,7 @@ def movie_reviews(movie_id):
                 
                 chat_completion = client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
-                    model="llama3-8b-8192",
+                    model="llama-3.3-70b-versatile",
                     temperature=0.5,
                     response_format={"type": "json_object"}
                 )
@@ -334,14 +342,31 @@ def movie_qa(movie_id):
         if not reviews:
             return jsonify({"answer": "Maaf, belum ada ulasan murni (konteks) yang bisa dimanfaatkan untuk menjawab pertanyaan ini."})
             
-        all_reviews_text = "\n\n".join([r.get('content', '') for r in reviews[:15]])
+        all_reviews_text_list = [r.get('content', '') for r in reviews]
+        
+        # RAG Logic: Hitung similarity Teks (Pertanyaan User) vs Ulasan menggunakan TF-IDF
+        vectorizer = TfidfVectorizer(stop_words='english')
+        # Tambahkan pertanyaan di index 0
+        texts_for_tfidf = [user_question] + all_reviews_text_list
+        tfidf_matrix = vectorizer.fit_transform(texts_for_tfidf)
+        
+        # Ambil cosine similarity dari Pertanyaan (Index 0)
+        qa_cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:])[0]
+        
+        # Urutkan index berdasarkan similarity terbesar, ambil top 3
+        top_indices = sorted(range(len(qa_cosine_sim)), key=lambda i: qa_cosine_sim[i], reverse=True)[:3]
+        
+        # Extract 3 review paling mirip
+        top_3_reviews = [all_reviews_text_list[i] for i in top_indices]
+        
+        combined_context = "\n\n---\n\n".join(top_3_reviews)
         
         client = Groq(api_key=GROQ_API_KEY)
-        prompt = f"Anda adalah asisten cerdas untuk platform film MRMP. Tugas Anda adalah menjawab pertanyaan pengguna BERDASARKAN HANYA dari ulasan penonton di bawah ini. Jika jawaban atas pertanyaannya tidak ada dalam ulasan, katakan secara eksplisit bahwa info tersebut tidak disebut dalam ulasan. Jangan mengarang informasi di luar teks.\n\nKonteks Ulasan:\n{all_reviews_text}\n\nPertanyaan User: {user_question}"
+        prompt = f"Anda adalah asisten cerdas untuk platform film MRMP. Tugas Anda adalah menjawab pertanyaan pengguna BERDASARKAN HANYA dari 3 ulasan penonton paling relevan di bawah ini. Jika jawaban atas pertanyaannya tidak ada dalam ulasan, katakan secara eksplisit bahwa info tersebut tidak disebut dalam ulasan. Jangan mengarang informasi di luar teks.\n\nKonteks Ulasan Relevan (Top-3):\n{combined_context}\n\nPertanyaan User: {user_question}"
         
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama3-8b-8192",
+            model="llama-3.3-70b-versatile",
             temperature=0.3,
         )
         
