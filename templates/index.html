@@ -219,6 +219,8 @@
 
         .hidden { display: none !important; }
     </style>
+    <!-- Tambahkan library Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
@@ -236,7 +238,9 @@
             <div class="chart-section" id="chart-section">
                 <h2>📈 Analisis Rating Popularitas</h2>
                 <div class="loader" id="chart-loader"></div>
-                <div class="chart-container" id="chart-container"></div>
+                <div class="chart-container">
+                    <canvas id="ratingChart"></canvas>
+                </div>
             </div>
         </div>
 
@@ -314,8 +318,10 @@
         }
 
         // ==========================
-        // FITUR 3: Grafik Analitik Rating
+        // FITUR 3: Grafik Analitik Rating (dengan Chart.js)
         // ==========================
+        let ratingChartObj = null;
+
         async function loadChart() {
             chartSection.style.display = 'block';
             const loader = document.getElementById('chart-loader');
@@ -325,13 +331,74 @@
                 const data = await res.json();
                 loader.classList.add('hidden');
                 
-                if (data.image) {
-                    chartContainer.innerHTML = `<img src="${data.image}" alt="Rating Chart">`;
+                if (data.results && data.results.length > 0) {
+                    renderChart(data.results);
+                } else {
+                    document.getElementById('ratingChart').style.display = 'none';
+                    loader.outerHTML = '<p>Gagal memuat data grafik (Kosong).</p>';
                 }
             } catch (err) {
                 loader.classList.add('hidden');
-                chartContainer.innerHTML = '<p>Gagal memuat grafik rating.</p>';
+                document.getElementById('ratingChart').style.display = 'none';
+                console.error("Gagal memuat chart:", err);
             }
+        }
+
+        function renderChart(moviesData) {
+            const ctx = document.getElementById('ratingChart').getContext('2d');
+            
+            // Hapus chart lama jika ada (agar tidak tumpang tindih)
+            if (ratingChartObj) {
+                ratingChartObj.destroy();
+            }
+
+            const labels = moviesData.map(m => m.title);
+            const dataScores = moviesData.map(m => m.rating);
+            
+            // Buat warna cerah untuk dark theme
+            const bgColors = dataScores.map(score => {
+                if (score >= 8) return 'rgba(34, 197, 94, 0.7)'; // Hijau
+                if (score >= 7) return 'rgba(59, 130, 246, 0.7)'; // Biru
+                return 'rgba(234, 179, 8, 0.7)'; // Kuning
+            });
+
+            ratingChartObj = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Average Rating',
+                        data: dataScores,
+                        backgroundColor: bgColors,
+                        borderColor: bgColors.map(c => c.replace('0.7', '1')),
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) { return ` Rating: ${context.parsed.y}`; }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 10,
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                            ticks: { color: '#94a3b8' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', maxRotation: 45, minRotation: 45 }
+                        }
+                    }
+                }
+            });
         }
 
         function renderMovies(movies) {
@@ -407,7 +474,7 @@
         // FITUR 5: Analisis Sentimen
         // ==========================
         async function getReviews(movieId, title) {
-            openModal(`Analisis Sentimen Ulasan: "${title}"`, '<div class="loader"></div><p style="text-align:center">AI sedang memproses sentimen ulasan dengan TextBlob...</p>');
+            openModal(`Analisis Sentimen Ulasan: "${title}"`, '<div class="loader"></div><p style="text-align:center">AI sedang memproses sentimen ulasan dengan NLTK VADER...</p>');
             
             try {
                 const res = await fetch(`/api/reviews/${movieId}`);

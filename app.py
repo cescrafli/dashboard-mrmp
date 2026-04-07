@@ -3,16 +3,13 @@ import requests
 import os
 from dotenv import load_dotenv
 import pandas as pd
-import matplotlib
-import matplotlib.pyplot as plt
-import io
-import base64
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from textblob import TextBlob
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-# Use non-interactive backend for matplotlib
-matplotlib.use('Agg')
+# Ensure VADER lexicon is downloaded
+nltk.download('vader_lexicon', quiet=True)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -71,49 +68,10 @@ def chart_ratings():
         if not data:
             return "No data", 404
 
-        # Prepare data for pandas
-        movies = [{'title': movie['title'][:15] + ('...' if len(movie['title']) > 15 else ''), 'rating': movie['vote_average']} for movie in data[:10]]
-        df = pd.DataFrame(movies)
+        # Prepare data for frontend Chart.js
+        movies_data = [{'title': movie['title'][:15] + ('...' if len(movie['title']) > 15 else ''), 'rating': movie['vote_average']} for movie in data[:10]]
         
-        # Create chart
-        plt.figure(figsize=(10, 6))
-        
-        # Define visually pleasing colors - gradient-like bar chart
-        colors = plt.cm.viridis(df['rating'] / 10.0)
-        
-        bars = plt.bar(df['title'], df['rating'], color=colors)
-        
-        # Chart styling
-        plt.title('Top 10 Popular Movies Rating (TMDb)', fontsize=16, fontweight='bold', color='#ffffff')
-        plt.xlabel('Movie Title', fontsize=12, color='#b3b3b3')
-        plt.ylabel('Average Rating', fontsize=12, color='#b3b3b3')
-        plt.xticks(rotation=45, ha='right', color='#b3b3b3')
-        plt.yticks(color='#b3b3b3')
-        plt.ylim(0, 10.5)
-        plt.grid(axis='y', linestyle='--', alpha=0.3, color='#b3b3b3')
-        
-        # Transparent background for the chart to blend with dark mode
-        plt.gcf().patch.set_facecolor('#14181c')
-        plt.gca().set_facecolor('#282828')
-        
-        # Add values on top of bars
-        for bar in bars:
-            yval = bar.get_height()
-            plt.text(bar.get_x() + bar.get_width()/2, yval + 0.1, round(yval, 1), ha='center', va='bottom', color='white', fontweight='bold')
-            
-        plt.tight_layout()
-
-        # Save to buffer
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', facecolor=plt.gcf().get_facecolor(), transparent=True)
-        buf.seek(0)
-        
-        # Close plot to free memory
-        plt.close()
-        
-        # Encode to base64
-        image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-        return jsonify({"image": f"data:image/png;base64,{image_base64}"})
+        return jsonify({"results": movies_data})
         
     except requests.exceptions.RequestException as err:
         return jsonify({"error": str(err)}), 500
@@ -129,17 +87,14 @@ def movie_recommendations(movie_id):
         target_res.raise_for_status()
         target_movie = target_res.json()
         
-        # Fetch some popular movies to compare against (e.g. page 1 and 2)
-        all_movies = []
-        for page in range(1, 3):
-            pop_url = f"https://api.themoviedb.org/3/movie/popular?language=en-US&page={page}"
-            pop_res = requests.get(pop_url, headers=HEADERS)
-            if pop_res.status_code == 200:
-                all_movies.extend(pop_res.json().get('results', []))
+        # Fetch similar movies from TMDb endpoint
+        similar_url = f"https://api.themoviedb.org/3/movie/{movie_id}/similar?language=en-US&page=1"
+        similar_res = requests.get(similar_url, headers=HEADERS)
+        similar_movies = similar_res.json().get('results', []) if similar_res.status_code == 200 else []
                 
         # Ensure the target movie is in our list
         # Create a list without the target movie to avoid matching with itself
-        movies_dataset = [m for m in all_movies if m['id'] != movie_id]
+        movies_dataset = [m for m in similar_movies if m['id'] != movie_id]
         movies_dataset.insert(0, target_movie) # Put target movie at index 0
         
         # Extract overviews for TF-IDF
@@ -186,17 +141,19 @@ def movie_reviews(movie_id):
         positive_count = 0
         negative_count = 0
         
+        analyzer = SentimentIntensityAnalyzer()
+        
         for review in reviews:
             content = review.get('content', '')
-            # Perform Sentiment Analysis using TextBlob
-            analysis = TextBlob(content)
-            polarity = analysis.sentiment.polarity
+            # Perform Sentiment Analysis using NLTK VADER
+            scores = analyzer.polarity_scores(content)
+            polarity = scores['compound']
             
             sentiment_label = 'Neutral'
-            if polarity > 0.1:
+            if polarity >= 0.05:
                 sentiment_label = 'Positive'
                 positive_count += 1
-            elif polarity < -0.1:
+            elif polarity <= -0.05:
                 sentiment_label = 'Negative'
                 negative_count += 1
                 
