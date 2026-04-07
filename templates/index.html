@@ -3,61 +3,449 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Film Terpopuler Saat Ini</title>
+    <title>MRMP Dashboard - Movie Explorer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; background-color: #14181c; color: #fff; margin: 0; padding: 20px; }
-        h1 { text-align: center; color: #1DB954; }
-        .movie-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-        .movie-card { background-color: #282828; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        .movie-card img { width: 100%; display: block; }
-        .movie-info { padding: 15px; }
-        .movie-info h3 { margin: 0 0 10px 0; font-size: 16px; }
-        .movie-info p { margin: 0; font-size: 14px; color: #b3b3b3; }
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warn: #eab308;
+        }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--bg-dark); 
+            color: var(--text-main); 
+            margin: 0; 
+            padding: 0; 
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header { align-items: center; text-align: center; margin-bottom: 40px; padding-top: 40px; }
+        h1 { margin: 0; font-weight: 800; font-size: 2.5rem; background: linear-gradient(to right, #3b82f6, #8b5cf6); -webkit-background-clip: text; color: transparent; }
+        .subtitle { color: var(--text-muted); font-size: 1.1rem; }
+        
+        .top-section {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        /* Search Bar */
+        .search-container {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .search-container input {
+            flex: 1;
+            padding: 15px 20px;
+            border-radius: 30px;
+            border: 1px solid #334155;
+            background: rgba(30, 41, 59, 0.7);
+            color: white;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        .search-container input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+        }
+        .search-container button {
+            padding: 10px 25px;
+            border-radius: 30px;
+            border: none;
+            background: var(--accent);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .search-container button:hover {
+            background: var(--accent-hover);
+        }
+
+        /* Chart Section */
+        .chart-section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            display: none; /* Shown after load */
+        }
+        .chart-section h2 { margin-top: 0; font-size: 1.5rem; }
+        .chart-container { width: 100%; display: flex; justify-content: center; }
+        .chart-container img { max-width: 100%; height: auto; border-radius: 8px; }
+
+        /* Gallery */
+        .section-title { margin-bottom: 20px; font-size: 1.8rem; border-bottom: 2px solid #334155; padding-bottom: 10px; }
+        .movie-gallery { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); 
+            gap: 25px; 
+        }
+        .movie-card { 
+            background-color: var(--bg-card); 
+            border-radius: 12px; 
+            overflow: hidden; 
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        .movie-card:hover { 
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px -5px rgba(0,0,0,0.4);
+        }
+        .movie-card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; }
+        .movie-info { padding: 15px; flex: 1; display: flex; flex-direction: column; }
+        .movie-info h3 { margin: 0 0 10px 0; font-size: 1.1rem; line-height: 1.3; }
+        .movie-info p { margin: 0 0 15px 0; font-size: 0.9rem; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+        
+        .card-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: auto;
+        }
+        .btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            text-align: center;
+        }
+        .btn-ml { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.5); }
+        .btn-ml:hover { background: rgba(139, 92, 246, 0.4); }
+        .btn-review { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.5); }
+        .btn-review:hover { background: rgba(16, 185, 129, 0.4); }
+
+        /* Modal styling */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 30px;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+            border: 1px solid #334155;
+        }
+        .modal-overlay.active .modal-content { transform: scale(1); }
+        .modal-close {
+            position: absolute;
+            top: 20px; right: 20px;
+            background: none; border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        .modal-close:hover { color: white; }
+        
+        /* Spinner */
+        .loader {
+            border: 4px solid rgba(255,255,255,0.1);
+            border-left-color: var(--accent);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Sentiment Bar */
+        .sentiment-bar {
+            width: 100%;
+            height: 20px;
+            background: var(--danger);
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            margin: 15px 0;
+        }
+        .sentiment-positive { background: var(--success); height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: bold; }
+        .sentiment-negative { display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: bold; width: 100%; text-align: right; padding-right: 10px;}
+        
+        /* Review Item */
+        .review-item {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid var(--text-muted);
+        }
+        .review-item.Positive { border-left-color: var(--success); }
+        .review-item.Negative { border-left-color: var(--danger); }
+        .review-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+        .review-author { font-weight: bold; }
+        .review-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: #334155; }
+        .review-badge.Positive { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+        .review-badge.Negative { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
-    <h1>Film Terpopuler Saat Ini (Live from TMDb)</h1>
-    <div class="movie-gallery" id="movie-gallery"></div>
+    <div class="container">
+        <header>
+            <h1>MRMP Dashboard</h1>
+            <p class="subtitle">Secure, AI-Powered Movie Explorer</p>
+        </header>
+
+        <div class="top-section">
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="Cari film (contoh: Inception)..." onkeypress="handleKeyPress(event)">
+                <button onclick="searchMovies()">Cari</button>
+            </div>
+
+            <div class="chart-section" id="chart-section">
+                <h2>📈 Analisis Rating Popularitas</h2>
+                <div class="loader" id="chart-loader"></div>
+                <div class="chart-container" id="chart-container"></div>
+            </div>
+        </div>
+
+        <h2 class="section-title" id="gallery-title">Film Terpopuler</h2>
+        <div class="loader hidden" id="gallery-loader"></div>
+        <div class="movie-gallery" id="movie-gallery"></div>
+    </div>
+
+    <!-- Analytics Modal -->
+    <div class="modal-overlay" id="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h2 id="modal-title">Judul Mode</h2>
+            <div id="modal-body"></div>
+        </div>
+    </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const gallery = document.getElementById('movie-gallery');
+        const gallery = document.getElementById('movie-gallery');
+        const chartSection = document.getElementById('chart-section');
+        const chartContainer = document.getElementById('chart-container');
+        const galleryLoader = document.getElementById('gallery-loader');
 
-            fetch('/api/data')
-                .then(response => response.json())
-                .then(data => {
-                    // Cek jika ada error dari backend
-                    if (data.error) {
-                        gallery.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
-                        return;
-                    }
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPopularMovies();
+            loadChart();
+        });
 
-                    // Ambil daftar film dari data API
-                    const movies = data.results;
+        // ==========================
+        // FITUR 2: Pencarian Film
+        // ==========================
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') searchMovies();
+        }
 
-                    // Loop melalui setiap film dan buat kartu HTML-nya
-                    movies.forEach(movie => {
-                        const posterUrl = `https://image.tmdb.org/t/p/w500${movie.poster_path}`;
+        async function searchMovies() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return loadPopularMovies();
 
-                        const movieCardHTML = `
-                            <div class="movie-card">
-                                <img src="${posterUrl}" alt="${movie.title}">
-                                <div class="movie-info">
-                                    <h3>${movie.title}</h3>
-                                    <p>⭐ Rating: ${movie.vote_average}</p>
+            document.getElementById('gallery-title').innerText = `Hasil Pencarian: "${query}"`;
+            gallery.innerHTML = '';
+            galleryLoader.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                galleryLoader.classList.add('hidden');
+                
+                if (data.results && data.results.length > 0) {
+                    renderMovies(data.results);
+                } else {
+                    gallery.innerHTML = '<p>Tidak ada film ditemukan.</p>';
+                }
+            } catch (err) {
+                console.error(err);
+                galleryLoader.classList.add('hidden');
+                gallery.innerHTML = '<p style="color:red">Terjadi kesalahan pencarian.</p>';
+            }
+        }
+
+        async function loadPopularMovies() {
+            document.getElementById('gallery-title').innerText = 'Film Terpopuler Saat Ini';
+            gallery.innerHTML = '';
+            galleryLoader.classList.remove('hidden');
+
+            try {
+                const res = await fetch('/api/data');
+                const data = await res.json();
+                galleryLoader.classList.add('hidden');
+                if (data.results) renderMovies(data.results);
+            } catch (err) {
+                galleryLoader.classList.add('hidden');
+                gallery.innerHTML = '<p style="color:red">Gagal memuat film populer.</p>';
+            }
+        }
+
+        // ==========================
+        // FITUR 3: Grafik Analitik Rating
+        // ==========================
+        async function loadChart() {
+            chartSection.style.display = 'block';
+            const loader = document.getElementById('chart-loader');
+            
+            try {
+                const res = await fetch('/api/chart/ratings');
+                const data = await res.json();
+                loader.classList.add('hidden');
+                
+                if (data.image) {
+                    chartContainer.innerHTML = `<img src="${data.image}" alt="Rating Chart">`;
+                }
+            } catch (err) {
+                loader.classList.add('hidden');
+                chartContainer.innerHTML = '<p>Gagal memuat grafik rating.</p>';
+            }
+        }
+
+        function renderMovies(movies) {
+            gallery.innerHTML = '';
+            movies.forEach(movie => {
+                const posterUrl = movie.poster_path 
+                    ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+                    : 'https://via.placeholder.com/500x750?text=No+Poster';
+
+                const html = `
+                    <div class="movie-card">
+                        <img src="${posterUrl}" alt="${movie.title}">
+                        <div class="movie-info">
+                            <h3>${movie.title}</h3>
+                            <p>⭐ ${movie.vote_average.toFixed(1)} / 10</p>
+                            <div class="card-actions">
+                                <button class="btn btn-ml" onclick="getRecommendations(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">🔮 Rekomendasi ML</button>
+                                <button class="btn btn-review" onclick="getReviews(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">💬 Analisis Sentimen</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                gallery.innerHTML += html;
+            });
+        }
+
+        // Modal Logic
+        const modal = document.getElementById('modal');
+        function openModal(title, content) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-body').innerHTML = content;
+            modal.classList.add('active');
+        }
+        function closeModal() {
+            modal.classList.remove('active');
+        }
+
+        // ==========================
+        // FITUR 4: Rekomendasi ML
+        // ==========================
+        async function getRecommendations(movieId, title) {
+            openModal(`Mencari Rekomendasi untuk "${title}"...`, '<div class="loader"></div><p style="text-align:center">Mesin ML (TF-IDF & Cosine Similarity) sedang menganalisis...</p>');
+            
+            try {
+                const res = await fetch(`/api/recommendations/${movieId}`);
+                const data = await res.json();
+                
+                if (data.results && data.results.length > 0) {
+                    let html = `<p>Berdasarkan kecocokan sinopsis (analisis teks), Anda mungkin suka:</p><div class="movie-gallery" style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));">`;
+                    data.results.forEach(m => {
+                        const poster = m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : 'https://via.placeholder.com/200x300?text=No+Img';
+                        html += `
+                            <div class="movie-card" style="font-size:0.8rem">
+                                <img src="${poster}">
+                                <div style="padding:10px">
+                                    <h4 style="margin:0 0 5px 0">${m.title}</h4>
+                                    <p style="margin:0">⭐ ${m.vote_average.toFixed(1)}</p>
                                 </div>
                             </div>
                         `;
-
-                        // Tambahkan kartu film ke galeri
-                        gallery.innerHTML += movieCardHTML;
                     });
-                })
-                .catch(error => {
-                    console.error('Error saat mengambil data:', error);
-                    gallery.innerHTML = "<p style='color: red;'>Gagal memuat data. Periksa konsol untuk detail.</p>";
-                });
-        });
+                    html += `</div>`;
+                    document.getElementById('modal-body').innerHTML = html;
+                } else {
+                    document.getElementById('modal-body').innerHTML = '<p>Tidak menemukan film serupa.</p>';
+                }
+            } catch (err) {
+                document.getElementById('modal-body').innerHTML = '<p>Terjadi kesalahan saat mencari rekomendasi ML.</p>';
+            }
+        }
+
+        // ==========================
+        // FITUR 5: Analisis Sentimen
+        // ==========================
+        async function getReviews(movieId, title) {
+            openModal(`Analisis Sentimen Ulasan: "${title}"`, '<div class="loader"></div><p style="text-align:center">AI sedang memproses sentimen ulasan dengan TextBlob...</p>');
+            
+            try {
+                const res = await fetch(`/api/reviews/${movieId}`);
+                const data = await res.json();
+                
+                if (data.total === 0) {
+                    document.getElementById('modal-body').innerHTML = '<p>Tidak ada ulasan ditemukan di database.</p>';
+                    return;
+                }
+
+                let html = `
+                    <p>Total ulasan dianalisis: <b>${data.total}</b></p>
+                    <div class="sentiment-bar">
+                        <div class="sentiment-positive" style="width: ${data.positive_percentage}%">${data.positive_percentage}% Positif</div>
+                        <div class="sentiment-negative" style="width: ${data.negative_percentage}%">${data.negative_percentage}% Negatif</div>
+                    </div>
+                `;
+
+                if (data.reviews.length > 0) {
+                    html += '<h3>Cuplikan Ulasan:</h3>';
+                    data.reviews.forEach(r => {
+                        html += `
+                            <div class="review-item ${r.sentiment}">
+                                <div class="review-header">
+                                    <span class="review-author">${r.author}</span>
+                                    <span class="review-badge ${r.sentiment}">${r.sentiment} (Pol: ${r.polarity})</span>
+                                </div>
+                                <div style="font-size:0.9rem; color:#cbd5e1;">${r.content}</div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                document.getElementById('modal-body').innerHTML = html;
+            } catch (err) {
+                document.getElementById('modal-body').innerHTML = '<p>Terjadi kesalahan saat memproses sentimen.</p>';
+            }
+        }
     </script>
 </body>
 </html>
