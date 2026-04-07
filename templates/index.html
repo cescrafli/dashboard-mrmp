@@ -239,7 +239,7 @@
         <div class="top-section">
             <div class="search-container">
                 <input type="text" id="search-input" placeholder="Search Movie (example: spongebob goes to bali)..." onkeypress="handleKeyPress(event)">
-                <button onclick="searchMovies()">Cari</button>
+                <button onclick="searchMovies()">Search</button>
             </div>
 
             <div class="chart-section" id="chart-section">
@@ -255,7 +255,7 @@
         <div class="loader hidden" id="gallery-loader"></div>
         <div class="movie-gallery" id="movie-gallery"></div>
         <div style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-            <button id="load-more-btn" class="btn btn-ml hidden" onclick="loadMore()" style="padding: 12px 30px; font-size: 1rem;">⬇️ Muat Lebih Banyak</button>
+            <button id="load-more-btn" class="btn btn-ml hidden" onclick="loadMore()" style="padding: 12px 30px; font-size: 1rem;">⬇️ Load More</button>
         </div>
     </div>
 
@@ -312,7 +312,7 @@
                 return loadPopularMovies();
             }
 
-            document.getElementById('gallery-title').innerText = `Hasil Pencarian: "${query}"`;
+            document.getElementById('gallery-title').innerText = `Search Results: "${query}"`;
             if (!append) gallery.innerHTML = '';
             galleryLoader.classList.remove('hidden');
             document.getElementById('load-more-btn').classList.add('hidden');
@@ -511,7 +511,7 @@
         // FITUR 4: Rekomendasi ML
         // ==========================
         async function getRecommendations(movieId, title) {
-            openModal(`Mencari Rekomendasi untuk "${title}"...`, '<div class="loader"></div><p style="text-align:center">Mesin ML (TF-IDF & Cosine Similarity) sedang menganalisis...</p>');
+            openModal(`Looking for Recommendations for "${title}"...`, '<div class="loader"></div><p style="text-align:center">MRMP brain (cerebrum/serebrum) is analyzing...</p>');
             
             try {
                 const res = await fetch(`/api/recommendations/${movieId}`);
