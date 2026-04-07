@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import requests
 import os
 from dotenv import load_dotenv
@@ -7,15 +7,24 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from collections import Counter
+import string
+from flask_caching import Cache
 
-# Ensure VADER lexicon is downloaded
+# Ensure VADER lexicon and stopwords are downloaded
 nltk.download('vader_lexicon', quiet=True)
+nltk.download('stopwords', quiet=True)
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab', quiet=True)
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Baris ini SANGAT PENTING dan harus ada sebelum @app.route
 app = Flask(__name__)
+cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 600})
 
 # TMDB API Credentials
 API_KEY = os.getenv("TMDB_API_KEY")
@@ -34,6 +43,7 @@ def home():
 
 # Rute API untuk mengambil data film
 @app.route('/api/data')
+@cache.cached(timeout=600)
 def get_movie_data():
     try:
         url = "https://api.themoviedb.org/3/movie/popular?language=en-US&page=1"
@@ -79,6 +89,7 @@ def chart_ratings():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/recommendations/<int:movie_id>')
+@cache.cached(timeout=600)
 def movie_recommendations(movie_id):
     try:
         # First, query the target movie to get its details
@@ -108,10 +119,20 @@ def movie_recommendations(movie_id):
         # Calculate cosine similarity of target movie (index 0) against all others
         cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix)
         
-        # Get indices of top 5 most similar movies (skipping index 0 which is the movie itself)
-        sim_scores = list(enumerate(cosine_sim[0]))
-        sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-        top_indices = [i[0] for i in sim_scores[1:6] if i[0] < len(movies_dataset)]
+        # Calculate Hybrid Score = Cosine Similarity * Vote Average
+        # Skip index 0 which is the movie itself
+        hybrid_scores = []
+        for idx, sim in enumerate(cosine_sim[0]):
+            if idx == 0:
+                continue
+            # Fallback to 0 if 'vote_average' is missing
+            vote_avg = movies_dataset[idx].get('vote_average', 0)
+            hybrid_score = sim * vote_avg
+            hybrid_scores.append((idx, hybrid_score))
+            
+        # Get indices of top 5 based on hybrid score
+        hybrid_scores = sorted(hybrid_scores, key=lambda x: x[1], reverse=True)
+        top_indices = [i[0] for i in hybrid_scores[:5] if i[0] < len(movies_dataset)]
         
         # Extract recommended movies
         recommendations = [movies_dataset[i] for i in top_indices]
@@ -122,6 +143,7 @@ def movie_recommendations(movie_id):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/reviews/<int:movie_id>')
+@cache.cached(timeout=600)
 def movie_reviews(movie_id):
     try:
         url = f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?language=en-US&page=1"
@@ -159,19 +181,51 @@ def movie_reviews(movie_id):
                 
             processed_reviews.append({
                 "author": review.get('author'),
-                "content": content[:200] + "..." if len(content) > 200 else content,
+                "content": content,
                 "sentiment": sentiment_label,
                 "polarity": round(polarity, 2)
             })
+            
+        # Extract Keywords
+        stop_words = set(stopwords.words('english'))
+        # Menambahkan stopwords tambahan yang sering muncul tapi tak bermakna dalam review
+        custom_stopwords = {'movie', 'film', 'one', 'like', 'just', 'get', 'would', 'could', 'even', 'make', 'see', 'really', 'much', 'good', 'bad'}
+        stop_words.update(custom_stopwords)
+        
+        pos_words = []
+        neg_words = []
+        
+        for r in processed_reviews:
+            text = r["content"].lower()
+            # Bersihkan tanda baca
+            text = text.translate(str.maketrans('', '', string.punctuation))
+            tokens = word_tokenize(text)
+            filtered_tokens = [w for w in tokens if w.isalpha() and w not in stop_words and len(w) > 2]
+            
+            if r["sentiment"] == 'Positive':
+                pos_words.extend(filtered_tokens)
+            elif r["sentiment"] == 'Negative':
+                neg_words.extend(filtered_tokens)
+                
+        # Hitung frekuensi dan ambil top 5
+        top_pos = [word for word, count in Counter(pos_words).most_common(5)]
+        top_neg = [word for word, count in Counter(neg_words).most_common(5)]
             
         total_rated = positive_count + negative_count
         pos_pct = round((positive_count / total_rated) * 100) if total_rated > 0 else 0
         neg_pct = round((negative_count / total_rated) * 100) if total_rated > 0 else 0
         
+        # Potong konten setelah ekstraksi keyword agar rapi di UI
+        for r in processed_reviews:
+            if len(r["content"]) > 200:
+                r["content"] = r["content"][:200] + "..."
+        
         return jsonify({
             "total": len(reviews),
             "positive_percentage": pos_pct,
             "negative_percentage": neg_pct,
+            "top_positive_keywords": top_pos,
+            "top_negative_keywords": top_neg,
             "reviews": processed_reviews[:5] # Return top 5 reviews
         })
         
