@@ -254,6 +254,9 @@
         <h2 class="section-title" id="gallery-title">Film Terpopuler</h2>
         <div class="loader hidden" id="gallery-loader"></div>
         <div class="movie-gallery" id="movie-gallery"></div>
+        <div style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
+            <button id="load-more-btn" class="btn btn-ml hidden" onclick="loadMore()" style="padding: 12px 30px; font-size: 1rem;">⬇️ Muat Lebih Banyak</button>
+        </div>
     </div>
 
     <div class="modal-overlay" id="modal">
@@ -276,50 +279,87 @@
         });
 
         // ==========================
-        // FITUR 2: Pencarian Film
+        // FITUR 2: Pencarian Film & Pagination
         // ==========================
+        let currentPage = 1;
+        let currentSearchQuery = '';
+
         function handleKeyPress(e) {
-            if (e.key === 'Enter') searchMovies();
+            if (e.key === 'Enter') {
+                currentSearchQuery = document.getElementById('search-input').value.trim();
+                currentPage = 1;
+                searchMovies();
+            }
+        }
+        
+        function loadMore() {
+            currentPage++;
+            if (currentSearchQuery) {
+                searchMovies(true);
+            } else {
+                loadPopularMovies(true);
+            }
         }
 
-        async function searchMovies() {
-            const query = document.getElementById('search-input').value.trim();
-            if (!query) return loadPopularMovies();
+        async function searchMovies(append = false) {
+            if (!append) {
+                currentSearchQuery = document.getElementById('search-input').value.trim();
+                currentPage = 1;
+            }
+            const query = currentSearchQuery;
+            if (!query) {
+                currentPage = 1;
+                return loadPopularMovies();
+            }
 
             document.getElementById('gallery-title').innerText = `Hasil Pencarian: "${query}"`;
-            gallery.innerHTML = '';
+            if (!append) gallery.innerHTML = '';
             galleryLoader.classList.remove('hidden');
+            document.getElementById('load-more-btn').classList.add('hidden');
 
             try {
-                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${currentPage}`);
                 const data = await res.json();
                 galleryLoader.classList.add('hidden');
                 
                 if (data.results && data.results.length > 0) {
                     renderMovies(data.results);
-                } else {
+                    if (data.page < data.total_pages) {
+                        document.getElementById('load-more-btn').classList.remove('hidden');
+                    }
+                } else if (!append) {
                     gallery.innerHTML = '<p>Tidak ada film ditemukan.</p>';
                 }
             } catch (err) {
                 console.error(err);
                 galleryLoader.classList.add('hidden');
-                gallery.innerHTML = '<p style="color:red">Terjadi kesalahan pencarian.</p>';
+                if (!append) gallery.innerHTML = '<p style="color:red">Terjadi kesalahan pencarian.</p>';
             }
         }
 
-        async function loadPopularMovies() {
-            document.getElementById('gallery-title').innerText = 'Film Terpopuler Saat Ini';
-            gallery.innerHTML = '';
+        async function loadPopularMovies(append = false) {
+            if (!append) {
+                currentPage = 1;
+                currentSearchQuery = '';
+                document.getElementById('gallery-title').innerText = 'Film Terpopuler Saat Ini';
+                gallery.innerHTML = '';
+            }
             galleryLoader.classList.remove('hidden');
+            document.getElementById('load-more-btn').classList.add('hidden');
 
             try {
-                const res = await fetch('/api/data');
+                const res = await fetch(`/api/data?page=${currentPage}`);
                 const data = await res.json();
                 galleryLoader.classList.add('hidden');
-                if (data.results) renderMovies(data.results);
+                if (data.results && data.results.length > 0) {
+                    renderMovies(data.results);
+                    if (data.page < data.total_pages) {
+                        document.getElementById('load-more-btn').classList.remove('hidden');
+                    }
+                }
             } catch (err) {
                 galleryLoader.classList.add('hidden');
-                gallery.innerHTML = '<p style="color:red">Gagal memuat film populer.</p>';
+                if (!append) gallery.innerHTML = '<p style="color:red">Gagal memuat film populer.</p>';
             }
         }
 
@@ -408,7 +448,6 @@
         }
 
         function renderMovies(movies) {
-            gallery.innerHTML = '';
             movies.forEach(movie => {
                 const posterUrl = movie.poster_path 
                     ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
@@ -500,17 +539,31 @@
                     </div>
                 `;
 
-                // FITUR BARU: Menampilkan Box Ringkasan AI dari Groq
-                if (data.ai_summary) {
-                    html += `
+                // FITUR BARU: Menampilkan Box Ringkasan AI dari Groq JSON
+                if (data.ai_summary && data.ai_summary.ringkasan) {
+                    let aiHtml = `
                     <div style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); padding: 15px; border-radius: 12px; margin: 20px 0;">
                         <h4 style="margin: 0 0 10px 0; color: #60a5fa; display: flex; align-items: center; gap: 8px;">
-                            ✨ Ringkasan AI (Powered by Groq)
+                            ✨ Ringkasan Eksekutif AI (Groq)
                         </h4>
-                        <p style="margin: 0; font-size: 0.95rem; line-height: 1.5; color: #e2e8f0;">
-                            ${data.ai_summary}
+                        <p style="margin: 0 0 10px 0; font-size: 0.95rem; line-height: 1.5; color: #e2e8f0;">
+                            ${data.ai_summary.ringkasan}
                         </p>
-                    </div>`;
+                    `;
+                    
+                    if (data.ai_summary.kelebihan && data.ai_summary.kelebihan.length > 0) {
+                        aiHtml += `<h5 style="margin: 10px 0 5px 0; color: #86efac; font-size: 0.9rem;">Kelebihan:</h5><ul style="margin: 0; padding-left: 20px; color: #cbd5e1; font-size: 0.85rem; list-style-type: '✅ ';">`;
+                        data.ai_summary.kelebihan.forEach(item => { aiHtml += `<li style="margin-bottom:4px;">${item}</li>`; });
+                        aiHtml += `</ul>`;
+                    }
+                    if (data.ai_summary.kekurangan && data.ai_summary.kekurangan.length > 0) {
+                        aiHtml += `<h5 style="margin: 10px 0 5px 0; color: #fca5a5; font-size: 0.9rem;">Kekurangan:</h5><ul style="margin: 0; padding-left: 20px; color: #cbd5e1; font-size: 0.85rem; list-style-type: '❌ ';">`;
+                        data.ai_summary.kekurangan.forEach(item => { aiHtml += `<li style="margin-bottom:4px;">${item}</li>`; });
+                        aiHtml += `</ul>`;
+                    }
+                    
+                    aiHtml += `</div>`;
+                    html += aiHtml;
                 }
 
                 if ((data.top_positive_keywords && data.top_positive_keywords.length > 0) || (data.top_negative_keywords && data.top_negative_keywords.length > 0)) {

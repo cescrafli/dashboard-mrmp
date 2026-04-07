@@ -11,6 +11,7 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from collections import Counter
 import string
+import json
 from flask_caching import Cache
 from groq import Groq  # <-- TAMBAHAN: Import Groq
 
@@ -45,10 +46,11 @@ def home():
 
 # Rute API untuk mengambil data film
 @app.route('/api/data')
-@cache.cached(timeout=600)
+@cache.cached(timeout=600, query_string=True)
 def get_movie_data():
+    page = request.args.get('page', 1, type=int)
     try:
-        url = "https://api.themoviedb.org/3/movie/popular?language=en-US&page=1"
+        url = f"https://api.themoviedb.org/3/movie/popular?language=en-US&page={page}"
         response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         return jsonify(response.json())
@@ -57,12 +59,12 @@ def get_movie_data():
 
 @app.route('/api/search')
 def search_movies():
-    from flask import request
     query = request.args.get('q', '')
+    page = request.args.get('page', 1, type=int)
     if not query:
         return jsonify({"results": []})
     try:
-        url = f"https://api.themoviedb.org/3/search/movie?query={query}&language=en-US&page=1"
+        url = f"https://api.themoviedb.org/3/search/movie?query={query}&language=en-US&page={page}"
         response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         return jsonify(response.json())
@@ -105,14 +107,28 @@ def movie_recommendations(movie_id):
         similar_res = requests.get(similar_url, headers=HEADERS)
         similar_movies = similar_res.json().get('results', []) if similar_res.status_code == 200 else []
                 
+        # Fetch genre mappings
+        genre_url = "https://api.themoviedb.org/3/genre/movie/list?language=en-US"
+        genre_res = requests.get(genre_url, headers=HEADERS)
+        genre_map = {g['id']: g['name'] for g in genre_res.json().get('genres', [])} if genre_res.status_code == 200 else {}
+        
         # Ensure the target movie is in our list
         # Create a list without the target movie to avoid matching with itself
         movies_dataset = [m for m in similar_movies if m['id'] != movie_id]
         movies_dataset.insert(0, target_movie) # Put target movie at index 0
         
-        # Extract overviews for TF-IDF
-        # Replace None with empty string
-        overviews = [m.get('overview', '') or '' for m in movies_dataset]
+        # Extract overviews and append genres for robust TF-IDF
+        overviews = []
+        for m in movies_dataset:
+            text = m.get('overview', '') or ''
+            # Get genre names
+            if 'genres' in m:
+                g_names = [g['name'] for g in m['genres']]
+            else:
+                g_names = [genre_map.get(gid, '') for gid in m.get('genre_ids', []) if gid in genre_map]
+            
+            g_str = " ".join(g_names)
+            overviews.append(f"{text} {g_str}")
         
         # Calculate TF-IDF and Cosine Similarity
         vectorizer = TfidfVectorizer(stop_words='english')
@@ -218,26 +234,32 @@ def movie_reviews(movie_id):
         neg_pct = round((negative_count / total_rated) * 100) if total_rated > 0 else 0
         
         # ==========================================
-        # TAMBAHAN: GENERATIVE AI SUMMARY (GROQ)
+        # TAMBAHAN: GENERATIVE AI SUMMARY (GROQ) JSON
         # ==========================================
-        ai_summary = "Ringkasan AI belum tersedia."
+        ai_summary = {"ringkasan": "Ringkasan AI belum tersedia.", "kelebihan": [], "kekurangan": []}
         if GROQ_API_KEY and processed_reviews:
             try:
                 # Gabungkan ulasan untuk AI
                 all_reviews_text = "\n\n".join([r['content'] for r in processed_reviews[:10]])
                 
                 client = Groq(api_key=GROQ_API_KEY)
-                prompt = f"Bertindaklah sebagai kritikus film profesional. Baca kumpulan ulasan penonton berbahasa Inggris berikut, lalu buatkan 1 paragraf pendek (maksimal 3 kalimat) ringkasan eksekutif dalam bahasa Indonesia yang menjelaskan apa yang penonton suka dan tidak suka dari film ini.\n\nUlasan:\n{all_reviews_text}"
+                prompt = f"Bertindaklah sebagai kritikus film profesional. Baca kumpulan ulasan penonton berbahasa Inggris berikut, lalu kembalikan respons murni dalam format JSON. Ekstrak:\n- 'ringkasan' (1 paragraf pendek bahasa Indonesia tentang esensi review)\n- 'kelebihan' (array of strings, hal-hal positif)\n- 'kekurangan' (array of strings, hal-hal negatif)\n\nFormat Harus: {{\\\"ringkasan\\\": \\\"...\\\", \\\"kelebihan\\\": [\\\"...\\\"], \\\"kekurangan\\\": [\\\"...\\\"]}}\n\nUlasan:\n{all_reviews_text}"
                 
                 chat_completion = client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
                     model="llama3-8b-8192",
                     temperature=0.5,
+                    response_format={"type": "json_object"}
                 )
                 
-                ai_summary = chat_completion.choices[0].message.content
+                ai_data = json.loads(chat_completion.choices[0].message.content)
+                ai_summary = {
+                    "ringkasan": ai_data.get("ringkasan", ""),
+                    "kelebihan": ai_data.get("kelebihan", []),
+                    "kekurangan": ai_data.get("kekurangan", [])
+                }
             except Exception as e:
-                ai_summary = f"Maaf, AI gagal memproses ringkasan. Error: {str(e)}"
+                ai_summary["ringkasan"] = f"Maaf, AI gagal memproses ringkasan. Error: {str(e)}"
         
         # Potong konten setelah ekstraksi keyword agar rapi di UI
         for r in processed_reviews:
