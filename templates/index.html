@@ -462,6 +462,7 @@
                             <div class="card-actions">
                                 <button class="btn btn-ml" onclick="getRecommendations(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">🔮 Rekomendasi ML</button>
                                 <button class="btn btn-review" onclick="getReviews(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">💬 Analisis Sentimen</button>
+                                <button class="btn btn-ml" style="background:#ef4444; border-color:#ef4444; color:white; margin-top:5px; width:100%;" onclick="watchTrailer(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">🎬 Tonton Trailer</button>
                             </div>
                         </div>
                     </div>
@@ -479,6 +480,31 @@
         }
         function closeModal() {
             modal.classList.remove('active');
+            // Matikan video jika ada iframe
+            document.getElementById('modal-body').innerHTML = '';
+        }
+        
+        // ==========================
+        // FITUR BARU: TONTON TRAILER
+        // ==========================
+        async function watchTrailer(movieId, title) {
+            openModal(`Trailer: ${title}`, '<div class="loader"></div><p style="text-align:center">Memuat trailer...</p>');
+            try {
+                const res = await fetch(`/api/trailer/${movieId}`);
+                const data = await res.json();
+                
+                if (data.trailer_key) {
+                    document.getElementById('modal-body').innerHTML = `
+                        <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%;">
+                            <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="https://www.youtube.com/embed/${data.trailer_key}?autoplay=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('modal-body').innerHTML = '<p style="text-align:center; padding: 20px;">Maaf, trailer resmi tidak ditemukan untuk film ini.</p>';
+                }
+            } catch (err) {
+                document.getElementById('modal-body').innerHTML = '<p style="color:red; text-align:center;">Terjadi kesalahan saat memuat trailer.</p>';
+            }
         }
 
         // ==========================
@@ -596,9 +622,49 @@
                     });
                 }
                 
+                // FITUR BARU: Mini-RAG Chat UI
+                html += `
+                    <div style="margin-top: 30px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;">
+                        <h4 style="margin: 0 0 10px 0; color:#38bdf8;">🤖 Tanya AI (Berdasarkan Ulasan Ini)</h4>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <input type="text" id="qa-input-${movieId}" placeholder="Contoh: Apakah visual efeknya bagus?" style="flex:1; padding:10px; border-radius:4px; border:1px solid #334155; background:#1e293b; color:white;">
+                            <button onclick="askAI(${movieId})" style="padding:10px 20px; border-radius:4px; background:#3b82f6; color:white; border:none; cursor:pointer;">Tanya</button>
+                        </div>
+                        <div id="qa-result-${movieId}" style="display:none; padding:15px; border-radius:8px; background:rgba(56, 189, 248, 0.1); border:1px solid rgba(56, 189, 248, 0.3); color:#e2e8f0; font-size:0.9rem; line-height:1.5;"></div>
+                    </div>
+                `;
+                
                 document.getElementById('modal-body').innerHTML = html;
             } catch (err) {
                 document.getElementById('modal-body').innerHTML = '<p>Terjadi kesalahan saat memproses sentimen.</p>';
+            }
+        }
+
+        async function askAI(movieId) {
+            const inputField = document.getElementById(`qa-input-${movieId}`);
+            const resultBox = document.getElementById(`qa-result-${movieId}`);
+            const question = inputField.value.trim();
+            
+            if (!question) return;
+            
+            resultBox.style.display = 'block';
+            resultBox.innerHTML = '<div style="display:flex; align-items:center; gap:10px;"><div class="loader" style="width:15px;height:15px;margin:0;"></div> <span style="color:#60a5fa;">Groq sedang membaca ulasan untuk Anda...</span></div>';
+            
+            try {
+                const res = await fetch(`/api/qa/${movieId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: question })
+                });
+                const data = await res.json();
+                
+                if (data.answer) {
+                    resultBox.innerHTML = `<strong>Jawaban AI:</strong><br/>${data.answer}`;
+                } else if (data.error) {
+                    resultBox.innerHTML = `<span style="color:#fca5a5;">Error: ${data.error}</span>`;
+                }
+            } catch (err) {
+                resultBox.innerHTML = `<span style="color:#fca5a5;">Gagal terhubung ke server AI.</span>`;
             }
         }
     </script>

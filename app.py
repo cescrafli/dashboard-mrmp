@@ -92,6 +92,26 @@ def chart_ratings():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/trailer/<int:movie_id>')
+@cache.cached(timeout=600)
+def get_movie_trailer(movie_id):
+    try:
+        url = f"https://api.themoviedb.org/3/movie/{movie_id}/videos?language=en-US"
+        response = requests.get(url, headers=HEADERS)
+        response.raise_for_status()
+        results = response.json().get('results', [])
+        
+        # Cari video YouTube yang bermuatan tipe 'Trailer'
+        trailer_key = None
+        for video in results:
+            if video.get('site') == 'YouTube' and video.get('type') == 'Trailer':
+                trailer_key = video.get('key')
+                break
+        
+        return jsonify({"trailer_key": trailer_key})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/recommendations/<int:movie_id>')
 @cache.cached(timeout=600)
 def movie_recommendations(movie_id):
@@ -117,6 +137,17 @@ def movie_recommendations(movie_id):
         movies_dataset = [m for m in similar_movies if m['id'] != movie_id]
         movies_dataset.insert(0, target_movie) # Put target movie at index 0
         
+        # Calculate min & max for Min-Max Scaling (Vote Average and Popularity)
+        vote_averages = [m.get('vote_average', 0) for m in movies_dataset]
+        popularities = [m.get('popularity', 0) for m in movies_dataset]
+        
+        # Handle cases where all values are the same (max == min) to prevent division by zero
+        min_v, max_v = min(vote_averages), max(vote_averages)
+        min_p, max_p = min(popularities), max(popularities)
+        
+        v_range = max_v - min_v if max_v > min_v else 1
+        p_range = max_p - min_p if max_p > min_p else 1
+        
         # Extract overviews and append genres for robust TF-IDF
         overviews = []
         for m in movies_dataset:
@@ -137,15 +168,17 @@ def movie_recommendations(movie_id):
         # Calculate cosine similarity of target movie (index 0) against all others
         cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix)
         
-        # Calculate Hybrid Score = Cosine Similarity * Vote Average
+        # Calculate Hybrid Score = 0.5*Cosine + 0.3*Vote_Avg_Norm + 0.2*Pop_Norm
         # Skip index 0 which is the movie itself
         hybrid_scores = []
         for idx, sim in enumerate(cosine_sim[0]):
             if idx == 0:
                 continue
-            # Fallback to 0 if 'vote_average' is missing
-            vote_avg = movies_dataset[idx].get('vote_average', 0)
-            hybrid_score = sim * vote_avg
+                
+            norm_vote = (movies_dataset[idx].get('vote_average', 0) - min_v) / v_range
+            norm_pop = (movies_dataset[idx].get('popularity', 0) - min_p) / p_range
+            
+            hybrid_score = (0.5 * sim) + (0.3 * norm_vote) + (0.2 * norm_pop)
             hybrid_scores.append((idx, hybrid_score))
             
         # Get indices of top 5 based on hybrid score
@@ -275,6 +308,45 @@ def movie_reviews(movie_id):
             "ai_summary": ai_summary, # <-- TAMBAHAN: Mengirim ringkasan ke frontend
             "reviews": processed_reviews[:5] # Return top 5 reviews
         })
+        
+    except requests.exceptions.RequestException as err:
+        return jsonify({"error": str(err)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/qa/<int:movie_id>', methods=['POST'])
+def movie_qa(movie_id):
+    if not GROQ_API_KEY:
+        return jsonify({"error": "GROQ_API_KEY tidak tersambung."}), 500
+        
+    data = request.json
+    user_question = data.get('question', '')
+    if not user_question:
+        return jsonify({"error": "Pertanyaan wajib diisi."}), 400
+        
+    try:
+        # Mengambil ulasan lagi untuk konteks AI
+        url = f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?language=en-US&page=1"
+        response = requests.get(url, headers=HEADERS)
+        response.raise_for_status()
+        reviews = response.json().get('results', [])
+        
+        if not reviews:
+            return jsonify({"answer": "Maaf, belum ada ulasan murni (konteks) yang bisa dimanfaatkan untuk menjawab pertanyaan ini."})
+            
+        all_reviews_text = "\n\n".join([r.get('content', '') for r in reviews[:15]])
+        
+        client = Groq(api_key=GROQ_API_KEY)
+        prompt = f"Anda adalah asisten cerdas untuk platform film MRMP. Tugas Anda adalah menjawab pertanyaan pengguna BERDASARKAN HANYA dari ulasan penonton di bawah ini. Jika jawaban atas pertanyaannya tidak ada dalam ulasan, katakan secara eksplisit bahwa info tersebut tidak disebut dalam ulasan. Jangan mengarang informasi di luar teks.\n\nKonteks Ulasan:\n{all_reviews_text}\n\nPertanyaan User: {user_question}"
+        
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-8b-8192",
+            temperature=0.3,
+        )
+        
+        answer = chat_completion.choices[0].message.content
+        return jsonify({"answer": answer})
         
     except requests.exceptions.RequestException as err:
         return jsonify({"error": str(err)}), 500
