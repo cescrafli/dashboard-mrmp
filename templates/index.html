@@ -227,7 +227,6 @@
 
         .hidden { display: none !important; }
     </style>
-    <!-- Tambahkan library Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -257,7 +256,6 @@
         <div class="movie-gallery" id="movie-gallery"></div>
     </div>
 
-    <!-- Analytics Modal -->
     <div class="modal-overlay" id="modal">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal()">&times;</button>
@@ -479,10 +477,11 @@
         }
 
         // ==========================
-        // FITUR 5: Analisis Sentimen
+        // FITUR 5: Analisis Sentimen & AI Groq
         // ==========================
         async function getReviews(movieId, title) {
-            openModal(`Analisis Sentimen Ulasan: "${title}"`, '<div class="loader"></div><p style="text-align:center">AI sedang memproses sentimen ulasan dengan NLTK VADER...</p>');
+            // Ubah teks loading untuk memberitahu bahwa AI Groq sedang bekerja
+            openModal(`Analisis Sentimen Ulasan: "${title}"`, '<div class="loader"></div><p style="text-align:center">AI Groq sedang membaca semua ulasan dan merangkumnya untukmu...</p>');
             
             try {
                 const res = await fetch(`/api/reviews/${movieId}`);
@@ -500,6 +499,19 @@
                         <div class="sentiment-negative" style="width: ${data.negative_percentage}%">${data.negative_percentage}% Negatif</div>
                     </div>
                 `;
+
+                // FITUR BARU: Menampilkan Box Ringkasan AI dari Groq
+                if (data.ai_summary) {
+                    html += `
+                    <div style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); padding: 15px; border-radius: 12px; margin: 20px 0;">
+                        <h4 style="margin: 0 0 10px 0; color: #60a5fa; display: flex; align-items: center; gap: 8px;">
+                            ✨ Ringkasan AI (Powered by Groq)
+                        </h4>
+                        <p style="margin: 0; font-size: 0.95rem; line-height: 1.5; color: #e2e8f0;">
+                            ${data.ai_summary}
+                        </p>
+                    </div>`;
+                }
 
                 if ((data.top_positive_keywords && data.top_positive_keywords.length > 0) || (data.top_negative_keywords && data.top_negative_keywords.length > 0)) {
                     html += `<div class="keyword-container"><p style="margin:0 0 5px 0;font-weight:bold;font-size:0.9rem">✨ Highlight Words (NLTK Tokenizer)</p>`;

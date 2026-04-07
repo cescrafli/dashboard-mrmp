@@ -12,6 +12,7 @@ from nltk.tokenize import word_tokenize
 from collections import Counter
 import string
 from flask_caching import Cache
+from groq import Groq  # <-- TAMBAHAN: Import Groq
 
 # Ensure VADER lexicon and stopwords are downloaded
 nltk.download('vader_lexicon', quiet=True)
@@ -29,6 +30,7 @@ cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT':
 # TMDB API Credentials
 API_KEY = os.getenv("TMDB_API_KEY")
 READ_ACCESS_TOKEN = os.getenv("TMDB_READ_ACCESS_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") # <-- TAMBAHAN: Kunci API Groq
 
 # Header autentikasi menggunakan Read Access Token (lebih aman)
 HEADERS = {
@@ -215,6 +217,28 @@ def movie_reviews(movie_id):
         pos_pct = round((positive_count / total_rated) * 100) if total_rated > 0 else 0
         neg_pct = round((negative_count / total_rated) * 100) if total_rated > 0 else 0
         
+        # ==========================================
+        # TAMBAHAN: GENERATIVE AI SUMMARY (GROQ)
+        # ==========================================
+        ai_summary = "Ringkasan AI belum tersedia."
+        if GROQ_API_KEY and processed_reviews:
+            try:
+                # Gabungkan ulasan untuk AI
+                all_reviews_text = "\n\n".join([r['content'] for r in processed_reviews[:10]])
+                
+                client = Groq(api_key=GROQ_API_KEY)
+                prompt = f"Bertindaklah sebagai kritikus film profesional. Baca kumpulan ulasan penonton berbahasa Inggris berikut, lalu buatkan 1 paragraf pendek (maksimal 3 kalimat) ringkasan eksekutif dalam bahasa Indonesia yang menjelaskan apa yang penonton suka dan tidak suka dari film ini.\n\nUlasan:\n{all_reviews_text}"
+                
+                chat_completion = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama3-8b-8192",
+                    temperature=0.5,
+                )
+                
+                ai_summary = chat_completion.choices[0].message.content
+            except Exception as e:
+                ai_summary = f"Maaf, AI gagal memproses ringkasan. Error: {str(e)}"
+        
         # Potong konten setelah ekstraksi keyword agar rapi di UI
         for r in processed_reviews:
             if len(r["content"]) > 200:
@@ -226,6 +250,7 @@ def movie_reviews(movie_id):
             "negative_percentage": neg_pct,
             "top_positive_keywords": top_pos,
             "top_negative_keywords": top_neg,
+            "ai_summary": ai_summary, # <-- TAMBAHAN: Mengirim ringkasan ke frontend
             "reviews": processed_reviews[:5] # Return top 5 reviews
         })
         
