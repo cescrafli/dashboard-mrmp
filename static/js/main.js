@@ -323,7 +323,7 @@ const gallery = document.getElementById('movie-gallery');
                 }
 
                 if ((data.top_positive_keywords && data.top_positive_keywords.length > 0) || (data.top_negative_keywords && data.top_negative_keywords.length > 0)) {
-                    html += `<div class="keyword-container"><p style="margin:0 0 5px 0;font-weight:bold;font-size:0.9rem">✨ Highlight Words (NLTK Tokenizer)</p>`;
+                    html += `<div class="keyword-container"><p style="margin:0 0 5px 0;font-weight:bold;font-size:0.9rem">✨ Highlight Words</p>`;
                     if (data.top_positive_keywords.length > 0) {
                         html += `<div class="keyword-row"><span class="keyword-label">Positive:</span>`;
                         data.top_positive_keywords.forEach(word => { html += `<span class="keyword-badge pos">${word}</span>`; });
