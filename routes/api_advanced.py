@@ -7,7 +7,7 @@ from nltk.corpus import stopwords
 from groq import Groq
 from core.extensions import cache
 from core.config import Config
-from ml.models import sentence_model, sentiment_pipeline
+from ml.models import hf_get_embeddings, hf_get_sentiment
 
 advanced_bp = Blueprint('api_advanced', __name__, url_prefix='/api')
 
@@ -15,26 +15,22 @@ advanced_bp = Blueprint('api_advanced', __name__, url_prefix='/api')
 @cache.cached(timeout=600)
 def movie_recommendations(movie_id):
     try:
-        # First, query the target movie to get its details
         target_url = f"https://api.themoviedb.org/3/movie/{movie_id}?language=en-US"
         target_res = requests.get(target_url, headers=Config.TMDB_HEADERS)
         target_res.raise_for_status()
         target_movie = target_res.json()
         
-        # Fetch similar movies from TMDb endpoint
         similar_url = f"https://api.themoviedb.org/3/movie/{movie_id}/similar?language=en-US&page=1"
         similar_res = requests.get(similar_url, headers=Config.TMDB_HEADERS)
         similar_movies = similar_res.json().get('results', []) if similar_res.status_code == 200 else []
                 
-        # Fetch genre mappings
         genre_url = "https://api.themoviedb.org/3/genre/movie/list?language=en-US"
         genre_res = requests.get(genre_url, headers=Config.TMDB_HEADERS)
         genre_map = {g['id']: g['name'] for g in genre_res.json().get('genres', [])} if genre_res.status_code == 200 else {}
         
         movies_dataset = [m for m in similar_movies if m['id'] != movie_id]
-        movies_dataset.insert(0, target_movie)  # Put target movie at index 0
+        movies_dataset.insert(0, target_movie)  
         
-        # Calculate min & max for Min-Max Scaling (Vote Average and Popularity)
         vote_averages = [m.get('vote_average', 0) for m in movies_dataset]
         popularities = [m.get('popularity', 0) for m in movies_dataset]
         
@@ -55,10 +51,9 @@ def movie_recommendations(movie_id):
             g_str = ", ".join(g_names)
             overviews.append(f"{text} Genres: {g_str}")
         
-        # Use global model for better performance
-        embeddings = sentence_model.encode(overviews)
+        # Call Hugging Face API instead of local model
+        embeddings = hf_get_embeddings(overviews)
         
-        # Calculate cosine similarity of target movie (index 0) against all others
         cosine_sim = cosine_similarity([embeddings[0]], embeddings)
         
         hybrid_scores = []
@@ -99,39 +94,55 @@ def movie_reviews(movie_id):
                 "reviews": []
             })
             
-        processed_reviews = []
         positive_count = 0
         negative_count = 0
+        processed_reviews = []
         
-        for review in reviews:
-            content = review.get('content', '')
-            try:
-                # Perform Sentiment Analysis using Transformers Pipeline
-                truncated_content = content[:1500] 
-                result = sentiment_pipeline(truncated_content)[0]
-                label = result['label']
-                score = result['score']
-                
-                if label == 'POSITIVE':
-                    sentiment_label = 'Positive'
-                    polarity = score # Approximation
-                    positive_count += 1
+        # Batasi ke 10 target review untuk menjaga rate limit HF Free Tier
+        target_reviews = reviews[:10]
+        valid_contents = [r.get('content', '')[:1500] for r in target_reviews]
+        
+        sentiments_res = None
+        try:
+            if valid_contents:
+                # Call Hugging Face API
+                sentiments_res = hf_get_sentiment(valid_contents)
+        except Exception as e:
+            print("HF Sentiment Error:", e)
+
+        for i, review in enumerate(target_reviews):
+            content = valid_contents[i]
+            author = review.get('author')
+            sentiment_label = 'Neutral'
+            polarity = 0
+            
+            if sentiments_res and i < len(sentiments_res):
+                res_item = sentiments_res[i]
+                if isinstance(res_item, list) and len(res_item) > 0:
+                    res_obj = res_item[0]
                 else:
-                    sentiment_label = 'Negative'
-                    polarity = -score
-                    negative_count += 1
-            except Exception as e:
-                sentiment_label = 'Neutral'
-                polarity = 0
-                
+                    res_obj = res_item
+                try:
+                    label = res_obj.get('label', '')
+                    score = res_obj.get('score', 0)
+                    if label == 'POSITIVE':
+                        sentiment_label = 'Positive'
+                        polarity = score
+                        positive_count += 1
+                    elif label == 'NEGATIVE':
+                        sentiment_label = 'Negative'
+                        polarity = -score
+                        negative_count += 1
+                except:
+                    pass
+            
             processed_reviews.append({
-                "author": review.get('author'),
-                "content": content,
+                "author": author,
+                "content": review.get('content', ''), 
                 "sentiment": sentiment_label,
                 "polarity": round(polarity, 2)
             })
             
-        # Extract Keywords using TF-IDF
         stop_words = set(stopwords.words('english'))
         custom_stopwords = {'movie', 'film', 'one', 'like', 'just', 'get', 'would', 'could', 'even', 'make', 'see', 'really', 'much', 'good', 'bad', 'the', 'and', 'it', 'is', 'in'}
         stop_words.update(custom_stopwords)
@@ -158,7 +169,6 @@ def movie_reviews(movie_id):
         pos_pct = round((positive_count / total_rated) * 100) if total_rated > 0 else 0
         neg_pct = round((negative_count / total_rated) * 100) if total_rated > 0 else 0
         
-        # Generative AI Summary (Groq)
         ai_summary = {"ringkasan": "Ringkasan AI belum tersedia.", "kelebihan": [], "kekurangan": []}
         if Config.GROQ_API_KEY and processed_reviews:
             try:
@@ -196,7 +206,6 @@ Review Collection:
             except Exception as e:
                 ai_summary["ringkasan"] = f"Sorry, AI failed to process the summary. Error: {str(e)}"
         
-        # Potong konten setelah ekstraksi keyword agar rapi di UI
         for r in processed_reviews:
             if len(r["content"]) > 200:
                 r["content"] = r["content"][:200] + "..."
@@ -234,10 +243,10 @@ def movie_qa(movie_id):
         
         if not reviews:
             return jsonify({"answer": "Sorry, there are no pure reviews (context) available that can be used to answer this question."})            
-        all_reviews_text_list = [r.get('content', '') for r in reviews]
+        all_reviews_text_list = [r.get('content', '') for r in reviews[:10]] # Limit to 10
         
-        # RAG Logic: Lakukan perhitungan similarity teks menggukan Sentence Transformer
-        embeddings = sentence_model.encode([user_question] + all_reviews_text_list)
+        # Call Hugging Face API instead of local SentenceTransformer
+        embeddings = hf_get_embeddings([user_question] + all_reviews_text_list)
         qa_cosine_sim = cosine_similarity([embeddings[0]], embeddings[1:])[0]
         
         top_indices = sorted(range(len(qa_cosine_sim)), key=lambda i: qa_cosine_sim[i], reverse=True)[:3]
