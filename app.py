@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response, stream_with_context
 import requests
 import os
 from dotenv import load_dotenv
@@ -15,6 +15,7 @@ import json
 from flask_caching import Cache
 from groq import Groq  # <-- TAMBAHAN: Import Groq
 from sentence_transformers import SentenceTransformer # <-- TAMBAHAN: Import Sentence Transformer
+from transformers import pipeline
 
 # Setup /tmp directory for serverless environments (like Vercel)
 import tempfile
@@ -34,7 +35,12 @@ load_dotenv()
 
 # Baris ini SANGAT PENTING dan harus ada sebelum @app.route
 app = Flask(__name__)
-cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 600})
+redis_url = os.getenv('REDIS_URL')
+if redis_url:
+    cache = Cache(app, config={'CACHE_TYPE': 'RedisCache', 'CACHE_REDIS_URL': redis_url, 'CACHE_DEFAULT_TIMEOUT': 600})
+else:
+    # Fallback ke SimpleCache jika REDIS_URL tidak ada (untuk local development)
+    cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 600})
 
 # TMDB API Credentials
 API_KEY = os.getenv("TMDB_API_KEY")
@@ -46,6 +52,14 @@ HEADERS = {
     "accept": "application/json",
     "Authorization": f"Bearer {READ_ACCESS_TOKEN}"
 }
+
+# ==========================================
+# FASE 1 & FASE 2: GLOBAL MODEL INITIALIZATION
+# ==========================================
+print("Loading Models...")
+sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+sentiment_pipeline = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+print("Models Loaded.")
 
 # Rute untuk halaman utama
 @app.route('/')
@@ -169,9 +183,8 @@ def movie_recommendations(movie_id):
             g_str = ", ".join(g_names)
             overviews.append(f"{text} Genres: {g_str}")
         
-        # Local initialization for Vercel cold-starts and memory efficiency
-        model = SentenceTransformer('all-MiniLM-L6-v2') 
-        embeddings = model.encode(overviews)
+        # Use global model for better performance
+        embeddings = sentence_model.encode(overviews)
         
         # Calculate cosine similarity of target movie (index 0) against all others
         cosine_sim = cosine_similarity([embeddings[0]], embeddings)
@@ -222,21 +235,26 @@ def movie_reviews(movie_id):
         positive_count = 0
         negative_count = 0
         
-        analyzer = SentimentIntensityAnalyzer()
-        
         for review in reviews:
             content = review.get('content', '')
-            # Perform Sentiment Analysis using NLTK VADER
-            scores = analyzer.polarity_scores(content)
-            polarity = scores['compound']
-            
-            sentiment_label = 'Neutral'
-            if polarity >= 0.05:
-                sentiment_label = 'Positive'
-                positive_count += 1
-            elif polarity <= -0.05:
-                sentiment_label = 'Negative'
-                negative_count += 1
+            try:
+                # Perform Sentiment Analysis using Transformers Pipeline
+                truncated_content = content[:1500] 
+                result = sentiment_pipeline(truncated_content)[0]
+                label = result['label']
+                score = result['score']
+                
+                if label == 'POSITIVE':
+                    sentiment_label = 'Positive'
+                    polarity = score # Approximation
+                    positive_count += 1
+                else:
+                    sentiment_label = 'Negative'
+                    polarity = -score
+                    negative_count += 1
+            except Exception as e:
+                sentiment_label = 'Neutral'
+                polarity = 0
                 
             processed_reviews.append({
                 "author": review.get('author'),
@@ -245,30 +263,28 @@ def movie_reviews(movie_id):
                 "polarity": round(polarity, 2)
             })
             
-        # Extract Keywords
+        # Extract Keywords using TF-IDF
         stop_words = set(stopwords.words('english'))
-        # Menambahkan stopwords tambahan yang sering muncul tapi tak bermakna dalam review
-        custom_stopwords = {'movie', 'film', 'one', 'like', 'just', 'get', 'would', 'could', 'even', 'make', 'see', 'really', 'much', 'good', 'bad'}
+        custom_stopwords = {'movie', 'film', 'one', 'like', 'just', 'get', 'would', 'could', 'even', 'make', 'see', 'really', 'much', 'good', 'bad', 'the', 'and', 'it', 'is', 'in'}
         stop_words.update(custom_stopwords)
         
-        pos_words = []
-        neg_words = []
+        pos_texts = [r["content"] for r in processed_reviews if r["sentiment"] == 'Positive']
+        neg_texts = [r["content"] for r in processed_reviews if r["sentiment"] == 'Negative']
         
-        for r in processed_reviews:
-            text = r["content"].lower()
-            # Bersihkan tanda baca
-            text = text.translate(str.maketrans('', '', string.punctuation))
-            tokens = word_tokenize(text)
-            filtered_tokens = [w for w in tokens if w.isalpha() and w not in stop_words and len(w) > 2]
-            
-            if r["sentiment"] == 'Positive':
-                pos_words.extend(filtered_tokens)
-            elif r["sentiment"] == 'Negative':
-                neg_words.extend(filtered_tokens)
+        def extract_top_keywords(texts, top_k=5):
+            if not texts:
+                return []
+            try:
+                vectorizer = TfidfVectorizer(stop_words=list(stop_words), max_features=100)
+                tfidf_matrix = vectorizer.fit_transform(texts)
+                scores = zip(vectorizer.get_feature_names_out(), tfidf_matrix.sum(axis=0).tolist()[0])
+                sorted_scores = sorted(scores, key=lambda x: x[1], reverse=True)
+                return [word for word, score in sorted_scores[:top_k]]
+            except:
+                return []
                 
-        # Hitung frekuensi dan ambil top 5
-        top_pos = [word for word, count in Counter(pos_words).most_common(5)]
-        top_neg = [word for word, count in Counter(neg_words).most_common(5)]
+        top_pos = extract_top_keywords(pos_texts)
+        top_neg = extract_top_keywords(neg_texts)
             
         total_rated = positive_count + negative_count
         pos_pct = round((positive_count / total_rated) * 100) if total_rated > 0 else 0
@@ -284,8 +300,21 @@ def movie_reviews(movie_id):
                 all_reviews_text = "\n\n".join([r['content'] for r in processed_reviews[:10]])
                 
                 client = Groq(api_key=GROQ_API_KEY)
-                prompt = f"Bertindaklah sebagai kritikus film profesional. Baca kumpulan ulasan penonton berbahasa Inggris berikut, lalu kembalikan respons murni dalam format JSON. Ekstrak:\n- 'ringkasan' (1 paragraf pendek bahasa Indonesia tentang esensi review)\n- 'kelebihan' (array of strings, hal-hal positif)\n- 'kekurangan' (array of strings, hal-hal negatif)\n\nFormat Harus: {{\\\"ringkasan\\\": \\\"...\\\", \\\"kelebihan\\\": [\\\"...\\\"], \\\"kekurangan\\\": [\\\"...\\\"]}}\n\nUlasan:\n{all_reviews_text}"
-                
+                prompt = f"""Anda adalah analis film profesional dan ahli data. Baca kumpulan ulasan penonton berbahasa Inggris berikut, lalu kembalikan respons MURNI dalam format JSON. 
+
+Instruksi Ekstraksi:
+1. 'ringkasan': Buat 1 paragraf pendek (maksimal 4 kalimat) dalam bahasa Indonesia yang merangkum sentimen mayoritas penonton.
+2. 'kelebihan': Array of strings berisi maksimal 3 poin positif utama yang paling sering dipuji (dalam bahasa Indonesia).
+3. 'kekurangan': Array of strings berisi maksimal 3 poin negatif utama yang paling sering dikritik (dalam bahasa Indonesia).
+
+Batasan: JANGAN menambahkan teks apa pun di luar JSON. Pastikan format JSON valid.
+
+Format yang diwajibkan:
+{{"ringkasan": "...", "kelebihan": ["..."], "kekurangan": ["..."]}}
+
+Kumpulan Ulasan:
+{all_reviews_text}
+"""                
                 chat_completion = client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
                     model="llama-3.3-70b-versatile",
@@ -344,14 +373,9 @@ def movie_qa(movie_id):
             
         all_reviews_text_list = [r.get('content', '') for r in reviews]
         
-        # RAG Logic: Hitung similarity Teks (Pertanyaan User) vs Ulasan menggunakan TF-IDF
-        vectorizer = TfidfVectorizer(stop_words='english')
-        # Tambahkan pertanyaan di index 0
-        texts_for_tfidf = [user_question] + all_reviews_text_list
-        tfidf_matrix = vectorizer.fit_transform(texts_for_tfidf)
-        
-        # Ambil cosine similarity dari Pertanyaan (Index 0)
-        qa_cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:])[0]
+        # RAG Logic: Lakukan perhitungan similarity teks menggukan Sentence Transformer
+        embeddings = sentence_model.encode([user_question] + all_reviews_text_list)
+        qa_cosine_sim = cosine_similarity([embeddings[0]], embeddings[1:])[0]
         
         # Urutkan index berdasarkan similarity terbesar, ambil top 3
         top_indices = sorted(range(len(qa_cosine_sim)), key=lambda i: qa_cosine_sim[i], reverse=True)[:3]
@@ -362,16 +386,34 @@ def movie_qa(movie_id):
         combined_context = "\n\n---\n\n".join(top_3_reviews)
         
         client = Groq(api_key=GROQ_API_KEY)
-        prompt = f"Anda adalah asisten cerdas untuk platform film MRMP. Tugas Anda adalah menjawab pertanyaan pengguna BERDASARKAN HANYA dari 3 ulasan penonton paling relevan di bawah ini. Jika jawaban atas pertanyaannya tidak ada dalam ulasan, katakan secara eksplisit bahwa info tersebut tidak disebut dalam ulasan. Jangan mengarang informasi di luar teks.\n\nKonteks Ulasan Relevan (Top-3):\n{combined_context}\n\nPertanyaan User: {user_question}"
-        
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-        )
-        
-        answer = chat_completion.choices[0].message.content
-        return jsonify({"answer": answer})
+        prompt = f"""Anda adalah MRMP-Bot, asisten cerdas yang ramah untuk mengeksplorasi film. Tugas Anda adalah menjawab pertanyaan pengguna HANYA berdasarkan konteks ulasan penonton yang diberikan di bawah ini.
+
+Aturan ketat:
+1. Jika informasi untuk menjawab TIDAK ADA di dalam konteks ulasan, katakan: "Maaf, saya tidak menemukan informasi tersebut dari ulasan penonton yang tersedia."
+2. JANGAN PERNAH mengarang informasi (halusinasi) dari luar teks ulasan ini.
+3. HARUS sertakan kutipan langsung pendek yang diapit tanda kutip ("...") dari ulasan untuk mendukung jawaban Anda.
+4. Jawablah menggunakan bahasa Indonesia yang santai dan profesional.
+
+Konteks Ulasan (Top 3 Paling Relevan):
+{combined_context}
+
+Pertanyaan Pengguna: {user_question}
+"""        
+        def generate():
+            try:
+                stream = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama-3.3-70b-versatile",
+                    temperature=0.3,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content is not None:
+                        yield f"data: {json.dumps({'text': chunk.choices[0].delta.content})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                
+        return Response(stream_with_context(generate()), mimetype='text/event-stream')
         
     except requests.exceptions.RequestException as err:
         return jsonify({"error": str(err)}), 500
