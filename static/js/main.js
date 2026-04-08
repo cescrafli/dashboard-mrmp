@@ -1,7 +1,12 @@
 const gallery = document.getElementById('movie-gallery');
 const chartSection = document.getElementById('chart-section');
-const chartContainer = document.getElementById('chart-container');
-const galleryLoader = document.getElementById('gallery-loader');
+
+// Fitur: Sticky Navigation Scroll Effect
+window.addEventListener('scroll', () => {
+    const nav = document.getElementById('topNav');
+    if (window.scrollY > 20) nav.classList.add('scrolled');
+    else nav.classList.remove('scrolled');
+});
 
 document.addEventListener('DOMContentLoaded', () => {
     loadPopularMovies();
@@ -28,6 +33,46 @@ function loadMore() {
     }
 }
 
+// Fitur: Toast Notification (Pengganti pesan error teks merah)
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    const icon = type === 'error' ? 'alert-circle' : 'check-circle';
+    toast.innerHTML = `<i data-lucide="${icon}" style="width:18px;height:18px;color:${type==='error'?'#ef4444':'#10b981'}"></i> ${message}`;
+    
+    container.appendChild(toast);
+    lucide.createIcons();
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(50px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Fitur: Skeleton Loading (Pengganti Spinner)
+function renderSkeleton(count = 10) {
+    gallery.innerHTML = '';
+    for(let i=0; i<count; i++) {
+        gallery.innerHTML += `<div class="skeleton skeleton-card"></div>`;
+    }
+}
+
+// Fitur: Premium Empty State
+function renderEmptyState(query) {
+    gallery.innerHTML = `
+        <div class="empty-state">
+            <i data-lucide="film"></i>
+            <h3>No results found</h3>
+            <p>We couldn't find any matches for "${query}". Try checking for typos or using different keywords.</p>
+        </div>
+    `;
+    lucide.createIcons();
+}
+
 async function searchMovies(append = false) {
     if (!append) {
         currentSearchQuery = document.getElementById('search-input').value.trim();
@@ -39,17 +84,17 @@ async function searchMovies(append = false) {
         return loadPopularMovies();
     }
 
-    document.getElementById('gallery-title').innerHTML = `<i data-lucide="search" style="margin-right:8px;"></i> Search Results: "${query}"`;
-    lucide.createIcons(); // Re-render icon
+    document.getElementById('gallery-title').innerHTML = `<i data-lucide="search" style="margin-right:8px;"></i> Results for "${query}"`;
+    lucide.createIcons(); 
     
-    if (!append) gallery.innerHTML = '';
-    galleryLoader.classList.remove('hidden');
+    if (!append) renderSkeleton(8);
     document.getElementById('load-more-btn').classList.add('hidden');
 
     try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&page=${currentPage}`);
         const data = await res.json();
-        galleryLoader.classList.add('hidden');
+        
+        if (!append) gallery.innerHTML = ''; // Hapus skeleton
         
         if (data.results && data.results.length > 0) {
             renderMovies(data.results);
@@ -57,12 +102,11 @@ async function searchMovies(append = false) {
                 document.getElementById('load-more-btn').classList.remove('hidden');
             }
         } else if (!append) {
-            gallery.innerHTML = '<p style="color:var(--text-muted)">No film found.</p>';
+            renderEmptyState(query);
         }
     } catch (err) {
-        console.error(err);
-        galleryLoader.classList.add('hidden');
-        if (!append) gallery.innerHTML = '<p style="color:var(--danger)">A search error occurred.</p>';
+        if (!append) gallery.innerHTML = '';
+        showToast('A connection error occurred while searching.', 'error');
     }
 }
 
@@ -70,17 +114,18 @@ async function loadPopularMovies(append = false) {
     if (!append) {
         currentPage = 1;
         currentSearchQuery = '';
-        document.getElementById('gallery-title').innerHTML = `<i data-lucide="trending-up" style="margin-right:8px;"></i> Trending Now`;
+        document.getElementById('gallery-title').innerHTML = `<i data-lucide="zap" style="margin-right:8px;"></i> Trending Now`;
         lucide.createIcons();
-        gallery.innerHTML = '';
+        renderSkeleton(10);
     }
-    galleryLoader.classList.remove('hidden');
     document.getElementById('load-more-btn').classList.add('hidden');
 
     try {
         const res = await fetch(`/api/data?page=${currentPage}`);
         const data = await res.json();
-        galleryLoader.classList.add('hidden');
+        
+        if (!append) gallery.innerHTML = ''; // Hapus skeleton
+        
         if (data.results && data.results.length > 0) {
             renderMovies(data.results);
             if (data.page < data.total_pages) {
@@ -88,8 +133,8 @@ async function loadPopularMovies(append = false) {
             }
         }
     } catch (err) {
-        galleryLoader.classList.add('hidden');
-        if (!append) gallery.innerHTML = '<p style="color:var(--danger)">Failed to load popular movies.</p>';
+        if (!append) gallery.innerHTML = '';
+        showToast('Failed to load popular movies.', 'error');
     }
 }
 
@@ -108,7 +153,7 @@ async function loadChart() {
             renderChart(data.results);
         } else {
             document.getElementById('ratingChart').style.display = 'none';
-            loader.outerHTML = '<p>Failed to load chart data (Empty).</p>';
+            loader.outerHTML = '<p style="color:var(--text-muted)">Failed to load chart data (Empty).</p>';
         }
     } catch (err) {
         loader.classList.add('hidden');
@@ -127,21 +172,20 @@ function renderChart(moviesData) {
     const labels = moviesData.map(m => m.title);
     const dataScores = moviesData.map(m => m.rating);
     
-    const bgColors = dataScores.map(score => {
-        if (score >= 8) return 'rgba(16, 185, 129, 0.8)'; 
-        if (score >= 7) return 'rgba(59, 130, 246, 0.8)'; 
-        return 'rgba(234, 179, 8, 0.8)'; 
-    });
+    // Monochrome Premium Chart Style
+    const bgColors = dataScores.map(() => 'rgba(255, 255, 255, 0.9)');
+    const hoverBgColors = dataScores.map(() => 'rgba(255, 255, 255, 1)');
 
     ratingChartObj = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
             datasets: [{
-                label: 'Average Rating',
+                label: 'Rating',
                 data: dataScores,
                 backgroundColor: bgColors,
-                borderRadius: 6,
+                hoverBackgroundColor: hoverBgColors,
+                borderRadius: 4,
                 borderSkipped: false
             }]
         },
@@ -150,24 +194,25 @@ function renderChart(moviesData) {
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: 'rgba(24, 24, 27, 0.9)',
+                    backgroundColor: '#18181b',
                     titleColor: '#fff',
                     bodyColor: '#a1a1aa',
                     padding: 12,
                     cornerRadius: 8,
+                    displayColors: false,
                     callbacks: {
-                        label: function(context) { return ` Rating: ${context.parsed.y}`; }
+                        label: function(context) { return ` Score: ${context.parsed.y}`; }
                     }
                 }
             },
             scales: {
                 y: {
                     beginAtZero: true, max: 10,
-                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    grid: { color: 'rgba(255, 255, 255, 0.05)', drawBorder: false },
                     ticks: { color: '#a1a1aa' }
                 },
                 x: {
-                    grid: { display: false },
+                    grid: { display: false, drawBorder: false },
                     ticks: { color: '#a1a1aa', maxRotation: 45, minRotation: 45 }
                 }
             }
@@ -176,32 +221,36 @@ function renderChart(moviesData) {
 }
 
 function renderMovies(movies) {
-    movies.forEach(movie => {
+    movies.forEach((movie, index) => {
         const posterUrl = movie.poster_path 
             ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
             : 'https://via.placeholder.com/500x750?text=No+Poster';
 
         const safeTitle = movie.title.replace(/'/g, "\\'");
+        
+        // Fitur: Staggered Animation (Delay berdasarkan urutan kartu)
+        const animationDelay = (index * 0.05) + 's';
 
         const html = `
-            <div class="movie-card">
-                <img src="${posterUrl}" alt="${movie.title}">
-                <div class="card-overlay">
-                    <div class="movie-info">
-                        <h3>${movie.title}</h3>
-                        <p><i data-lucide="star" style="width: 14px; height: 14px; fill: currentColor;"></i> ${movie.vote_average.toFixed(1)} / 10</p>
-                        <div class="card-actions">
-                            <button class="btn-action" onclick="getRecommendations(${movie.id}, '${safeTitle}')" title="Similar Recommendations">
-                                <i data-lucide="sparkles" style="width: 16px; height: 16px;"></i> Similar
-                            </button>
-                            <button class="btn-action" onclick="getReviews(${movie.id}, '${safeTitle}')" title="Sentiment Analysis">
-                                <i data-lucide="message-square-text" style="width: 16px; height: 16px;"></i> Analysis
-                            </button>
-                            <button class="btn-action full" onclick="watchTrailer(${movie.id}, '${safeTitle}')">
-                                <i data-lucide="play" style="width: 16px; height: 16px; fill: currentColor;"></i> Watch Trailer
-                            </button>
-                        </div>
+            <div class="movie-card animate-fade-in" style="animation-delay: ${animationDelay};">
+                <div style="position:relative; width:100%; aspect-ratio:2/3; overflow:hidden;">
+                    <img src="${posterUrl}" alt="${movie.title}">
+                    
+                    <div class="card-overlay">
+                        <button class="btn-action primary" onclick="watchTrailer(${movie.id}, '${safeTitle}')">
+                            <i data-lucide="play" style="width: 14px; height: 14px; fill: currentColor;"></i> Trailer
+                        </button>
+                        <button class="btn-action" onclick="getRecommendations(${movie.id}, '${safeTitle}')">
+                            <i data-lucide="sparkles" style="width: 14px; height: 14px;"></i> Similar
+                        </button>
+                        <button class="btn-action" onclick="getReviews(${movie.id}, '${safeTitle}')">
+                            <i data-lucide="bar-chart-2" style="width: 14px; height: 14px;"></i> Sentiment
+                        </button>
                     </div>
+                </div>
+                <div class="movie-info">
+                    <h3>${movie.title}</h3>
+                    <p><i data-lucide="star" style="width: 12px; height: 12px; fill: currentColor;"></i> ${movie.vote_average.toFixed(1)}</p>
                 </div>
             </div>
         `;
@@ -217,10 +266,12 @@ function openModal(title, content) {
     document.getElementById('modal-title').innerHTML = title;
     document.getElementById('modal-body').innerHTML = content;
     modal.classList.add('active');
+    document.body.style.overflow = 'hidden'; // Kunci scroll background saat modal terbuka
     lucide.createIcons();
 }
 function closeModal() {
     modal.classList.remove('active');
+    document.body.style.overflow = 'auto';
     setTimeout(() => { document.getElementById('modal-body').innerHTML = ''; }, 300);
 }
 
@@ -233,7 +284,7 @@ async function watchTrailer(movieId, title) {
         
         if (data.trailer_key) {
             document.getElementById('modal-body').innerHTML = `
-                <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; max-width: 100%;">
+                <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; border: 1px solid var(--border-color); max-width: 100%;">
                     <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" src="https://www.youtube.com/embed/${data.trailer_key}?autoplay=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
                 </div>
             `;
@@ -254,15 +305,15 @@ async function getRecommendations(movieId, title) {
         const data = await res.json();
         
         if (data.results && data.results.length > 0) {
-            let html = `<p style="color:var(--text-muted); margin-bottom: 20px;">Based on synopsis matching, you might like:</p><div class="movie-gallery" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px;">`;
+            let html = `<div class="movie-gallery" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 16px;">`;
             data.results.forEach(m => {
                 const poster = m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : 'https://via.placeholder.com/200x300?text=No+Img';
                 html += `
-                    <div class="movie-card" style="border-radius: 12px;">
-                        <img src="${poster}" style="border-radius: 12px;">
-                        <div class="card-overlay" style="padding: 10px;">
-                            <h4 style="margin:0 0 4px 0; font-size: 0.9rem; color: #fff;">${m.title}</h4>
-                            <p style="margin:0; font-size: 0.8rem; color: #eab308; display:flex; align-items:center; gap:4px;"><i data-lucide="star" style="width:12px;height:12px;fill:currentColor;"></i> ${m.vote_average.toFixed(1)}</p>
+                    <div style="background: var(--bg-card); border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color);">
+                        <img src="${poster}" style="width: 100%; aspect-ratio: 2/3; object-fit: cover; display:block;">
+                        <div style="padding: 12px;">
+                            <h4 style="margin:0 0 4px 0; font-size: 0.85rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${m.title}</h4>
+                            <p style="margin:0; font-size: 0.75rem; color: var(--text-muted); display:flex; align-items:center; gap:4px;"><i data-lucide="star" style="width:10px;height:10px;fill:currentColor;"></i> ${m.vote_average.toFixed(1)}</p>
                         </div>
                     </div>
                 `;
@@ -292,34 +343,36 @@ async function getReviews(movieId, title) {
         }
 
         let html = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
-                <span style="color:var(--text-muted)">Analyzed <b>${data.total}</b> reviews</span>
-                <span style="font-size:0.85rem; color:var(--text-muted)">${data.positive_percentage}% Positive</span>
-            </div>
-            <div class="sentiment-bar">
-                <div class="sentiment-positive" style="width: ${data.positive_percentage}%"></div>
+            <div style="margin-bottom: 24px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom: 8px; font-size: 0.9rem;">
+                    <span style="color:var(--text-muted)">Analyzed <b>${data.total}</b> reviews</span>
+                    <span style="color:var(--text-main); font-weight:600;">${data.positive_percentage}% Positive</span>
+                </div>
+                <div style="width: 100%; height: 8px; background: #3f3f46; border-radius: 999px; overflow: hidden;">
+                    <div style="height: 100%; width: ${data.positive_percentage}%; background: #fff; border-radius: 999px;"></div>
+                </div>
             </div>
         `;
 
         if (data.ai_summary && data.ai_summary.ringkasan) {
             let aiHtml = `
-            <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); padding: 20px; border-radius: 16px; margin: 25px 0;">
-                <h4 style="margin: 0 0 12px 0; color: #60a5fa; display: flex; align-items: center; gap: 8px; font-size: 1.05rem;">
-                    <i data-lucide="zap" style="width: 18px; height: 18px;"></i> AI Executive Summary
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 24px; border-radius: 16px; margin: 24px 0;">
+                <h4 style="margin: 0 0 12px 0; color: #fff; display: flex; align-items: center; gap: 8px; font-size: 1rem;">
+                    <i data-lucide="sparkles" style="width: 16px; height: 16px;"></i> Executive Summary
                 </h4>
-                <p style="margin: 0 0 16px 0; font-size: 0.95rem; line-height: 1.6; color: #e2e8f0;">
+                <p style="margin: 0 0 20px 0; font-size: 0.95rem; line-height: 1.6; color: var(--text-muted);">
                     ${data.ai_summary.ringkasan}
                 </p>
             `;
             
             if (data.ai_summary.kelebihan && data.ai_summary.kelebihan.length > 0) {
-                aiHtml += `<h5 style="margin: 12px 0 8px 0; color: #34d399; font-size: 0.9rem; display:flex; align-items:center; gap:6px;"><i data-lucide="thumbs-up" style="width:14px; height:14px;"></i> Pros</h5><ul style="margin: 0; padding-left: 24px; color: #cbd5e1; font-size: 0.9rem;">`;
-                data.ai_summary.kelebihan.forEach(item => { aiHtml += `<li style="margin-bottom:6px;">${item}</li>`; });
+                aiHtml += `<h5 style="margin: 0 0 8px 0; color: #fff; font-size: 0.9rem;">Pros</h5><ul style="margin: 0 0 16px 0; padding-left: 20px; color: var(--text-muted); font-size: 0.9rem;">`;
+                data.ai_summary.kelebihan.forEach(item => { aiHtml += `<li style="margin-bottom:4px;">${item}</li>`; });
                 aiHtml += `</ul>`;
             }
             if (data.ai_summary.kekurangan && data.ai_summary.kekurangan.length > 0) {
-                aiHtml += `<h5 style="margin: 16px 0 8px 0; color: #f87171; font-size: 0.9rem; display:flex; align-items:center; gap:6px;"><i data-lucide="thumbs-down" style="width:14px; height:14px;"></i> Cons</h5><ul style="margin: 0; padding-left: 24px; color: #cbd5e1; font-size: 0.9rem;">`;
-                data.ai_summary.kekurangan.forEach(item => { aiHtml += `<li style="margin-bottom:6px;">${item}</li>`; });
+                aiHtml += `<h5 style="margin: 0 0 8px 0; color: #fff; font-size: 0.9rem;">Cons</h5><ul style="margin: 0; padding-left: 20px; color: var(--text-muted); font-size: 0.9rem;">`;
+                data.ai_summary.kekurangan.forEach(item => { aiHtml += `<li style="margin-bottom:4px;">${item}</li>`; });
                 aiHtml += `</ul>`;
             }
             
@@ -327,47 +380,33 @@ async function getReviews(movieId, title) {
             html += aiHtml;
         }
 
-        if ((data.top_positive_keywords && data.top_positive_keywords.length > 0) || (data.top_negative_keywords && data.top_negative_keywords.length > 0)) {
-            html += `<div class="keyword-container"><p style="margin:0 0 8px 0; font-weight:600; font-size:0.95rem; display:flex; align-items:center; gap:6px;"><i data-lucide="hash" style="width:16px;height:16px;"></i> Highlight Words</p>`;
-            if (data.top_positive_keywords.length > 0) {
-                html += `<div class="keyword-row"><span class="keyword-label">Positive:</span>`;
-                data.top_positive_keywords.forEach(word => { html += `<span class="keyword-badge pos"><i data-lucide="plus" style="width:12px;height:12px;"></i> ${word}</span>`; });
-                html += `</div>`;
-            }
-            if (data.top_negative_keywords.length > 0) {
-                html += `<div class="keyword-row"><span class="keyword-label">Negative:</span>`;
-                data.top_negative_keywords.forEach(word => { html += `<span class="keyword-badge neg"><i data-lucide="minus" style="width:12px;height:12px;"></i> ${word}</span>`; });
-                html += `</div>`;
-            }
-            html += `</div>`;
-        }
-
         if (data.reviews.length > 0) {
-            html += '<h3 style="margin-top: 30px; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">Review Snippets</h3>';
+            html += '<h3 style="margin-top: 32px; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">Review Snippets</h3><div style="display:flex; flex-direction:column; gap:16px; margin-top:20px;">';
             data.reviews.forEach(r => {
-                let iconStr = r.sentiment === 'Positive' ? '<i data-lucide="smile" style="width:14px;height:14px;"></i>' : '<i data-lucide="frown" style="width:14px;height:14px;"></i>';
+                let iconStr = r.sentiment === 'Positive' ? '<i data-lucide="check-circle" style="width:14px;height:14px;"></i>' : '<i data-lucide="x-circle" style="width:14px;height:14px;"></i>';
                 html += `
-                    <div class="review-item">
-                        <div class="review-header">
-                            <span class="review-author">${r.author}</span>
-                            <span class="review-badge ${r.sentiment}">${iconStr} ${r.sentiment}</span>
+                    <div style="padding: 20px; border-radius: 16px; border: 1px solid var(--border-color); background: transparent;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 12px; align-items: center;">
+                            <span style="font-weight: 600; color: #fff; font-size: 0.95rem;">${r.author}</span>
+                            <span style="font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; display: flex; align-items: center; gap: 4px; font-weight: 500; ${r.sentiment === 'Positive' ? 'background: rgba(16, 185, 129, 0.1); color: #34d399;' : 'background: rgba(239, 68, 68, 0.1); color: #f87171;'}">${iconStr} ${r.sentiment}</span>
                         </div>
-                        <div style="font-size:0.95rem; color:#d4d4d8; line-height: 1.6;">${r.content}</div>
+                        <div style="font-size:0.95rem; color:var(--text-muted); line-height: 1.6;">${r.content}</div>
                     </div>
                 `;
             });
+            html += '</div>';
         }
         
         // RAG Chat
         html += `
-            <div style="margin-top: 30px; background: rgba(0,0,0,0.3); padding: 20px; border-radius: 16px; border: 1px solid var(--border-color);">
-                <h4 style="margin: 0 0 12px 0; color:#38bdf8; display:flex; align-items:center; gap:8px;"><i data-lucide="bot" style="width:18px;height:18px;"></i> Ask MRMP AI</h4>
-                <p style="font-size: 0.85rem; color:var(--text-muted); margin-top:0;">Answers based entirely on user reviews context.</p>
-                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                    <input type="text" id="qa-input-${movieId}" placeholder="e.g. Is the visual effect good?" style="flex:1; padding:12px 16px; border-radius:12px; border:1px solid #334155; background:var(--bg-card); color:white; outline:none; font-family:'Inter', sans-serif;">
-                    <button onclick="askAI(${movieId})" style="padding:12px 24px; border-radius:12px; background:var(--accent); color:white; border:none; cursor:pointer; font-weight:600; transition:background 0.2s;">Ask</button>
+            <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+                <div style="font-weight:600; display:flex; align-items:center; gap:8px; margin-bottom:4px;"><i data-lucide="bot" style="width:18px;height:18px;"></i> Ask MRMP</div>
+                <p style="font-size: 0.85rem; color:var(--text-muted); margin-top:0;">Answers derived strictly from audience reviews context.</p>
+                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                    <input type="text" id="qa-input-${movieId}" placeholder="e.g. Is the visual effect good?" style="flex:1; padding:14px 16px; border-radius:12px; border:1px solid var(--border-color); background:var(--bg-card); color:white; outline:none; font-family:'Inter', sans-serif;">
+                    <button onclick="askAI(${movieId})" style="padding:0 20px; border-radius:12px; background:var(--accent); color:var(--accent-black); border:none; font-weight:600; cursor:pointer; transition:opacity 0.2s;">Ask</button>
                 </div>
-                <div id="qa-result-${movieId}" style="display:none; padding:20px; border-radius:12px; background:rgba(56, 189, 248, 0.05); border:1px solid rgba(56, 189, 248, 0.2); color:#e2e8f0; font-size:0.95rem; line-height:1.6; margin-top:15px;"></div>
+                <div id="qa-result-${movieId}" style="display:none; padding:16px; border-radius:12px; background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-main); font-size:0.95rem; line-height:1.6; margin-top:16px;"></div>
             </div>
         `;
         
@@ -386,7 +425,7 @@ async function askAI(movieId) {
     if (!question) return;
     
     resultBox.style.display = 'block';
-    resultBox.innerHTML = `<div style="font-weight:600; color:#38bdf8; margin-bottom:8px; display:flex; align-items:center; gap:6px;"><i data-lucide="sparkles" style="width:16px;height:16px;"></i> MRMP Answer:</div><span id="stream-content-${movieId}"></span><span class="loader" style="width:12px;height:12px;border-width:2px;display:inline-block;margin-left:8px;margin-top:0;"></span>`;
+    resultBox.innerHTML = `<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; color:var(--text-muted); font-size:0.85rem;"><i data-lucide="corner-down-right" style="width:14px;height:14px;"></i> Generating response...</div><span id="stream-content-${movieId}"></span><div class="loader" style="width:12px;height:12px;border-width:2px;display:inline-block;margin:0 0 0 8px;"></div>`;
     lucide.createIcons();
     
     const contentBox = document.getElementById(`stream-content-${movieId}`);
