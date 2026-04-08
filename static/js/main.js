@@ -111,12 +111,12 @@ const gallery = document.getElementById('movie-gallery');
                     renderChart(data.results);
                 } else {
                     document.getElementById('ratingChart').style.display = 'none';
-                    loader.outerHTML = '<p>Gagal memuat data grafik (Kosong).</p>';
+                    loader.outerHTML = '<p>Failed to load chart data (Empty).</p>';
                 }
             } catch (err) {
                 loader.classList.add('hidden');
                 document.getElementById('ratingChart').style.display = 'none';
-                console.error("Gagal memuat chart:", err);
+                console.error("Failed to load chart:", err);
             }
         }
 
